@@ -1,9 +1,9 @@
-Package: app.pythonide
-Name: python
-Version: 0.0.1
-Architecture: iphoneos-arm64
-Description: 防闪退
-Maintainer: Eric
-Author: Eric
-Section: Tweaks
+Package: app.pythonide.fix
+Name: PythonIDE Fix
 Depends: mobilesubstrate (>= 0.9.5000)
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: 提供缺失的 ActivityKit 符号，防止 Python IDE 在 iOS 16.1.1 上崩溃
+Maintainer: Your Name
+Author: Your Name
+Section: Tweaks
