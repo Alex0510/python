@@ -13,7 +13,7 @@ endif
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = BluedAd
+TWEAK_NAME = python
 
 BluedAd_FILES = Tweak.xm
 BluedAd_CFLAGS = -fobjc-arc
