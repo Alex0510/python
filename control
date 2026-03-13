@@ -1,0 +1,9 @@
+Package: app.pythonide
+Name: python
+Version: 0.0.1
+Architecture: iphoneos-arm64
+Description: 防闪退
+Maintainer: Eric
+Author: Eric
+Section: Tweaks
+Depends: mobilesubstrate (>= 0.9.5000)
