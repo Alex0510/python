@@ -4,7 +4,7 @@ TARGET = iphone:clang:latest
 ARCHS = arm64
 
 # 插件名称（会生成 .dylib 和 .plist）
-TWEAK_NAME = PythonIDEFix
+TWEAK_NAME = kugou
 
 # 源文件
 PythonIDEFix_FILES = Tweak.xm
