@@ -82,9 +82,8 @@ static NSMutableDictionary *g_cachedUrls = nil;
 
 @end
 
-// 声明需要使用的类
+// 声明需要使用的类（只声明实际使用的类）
 CHDeclareClass(KGGuessFavorPlayViewController);
-CHDeclareClass(SongInfo);
 
 static const void *kFloatingButtonKey = &kFloatingButtonKey;
 
