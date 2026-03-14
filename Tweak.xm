@@ -2,7 +2,7 @@
 #import <CaptainHook/CaptainHook.h>
 #import <objc/runtime.h>
 
-// 自定义 NSURLProtocol 子类，用于拦截特定请求
+// 自定义 NSURLProtocol 拦截器
 @interface KGURLProtocol : NSURLProtocol <NSURLSessionDataDelegate>
 @property (nonatomic, strong) NSURLSessionDataTask *task;
 @property (nonatomic, strong) NSMutableData *responseData;
@@ -59,6 +59,7 @@ static NSMutableDictionary *g_cachedUrls = nil;
         if (!jsonError && [json isKindOfClass:[NSDictionary class]]) {
             NSArray *urls = json[@"url"];
             if ([urls isKindOfClass:[NSArray class]] && urls.count > 0) {
+                // 从请求 URL 中提取 hash 参数
                 NSString *query = self.request.URL.query;
                 NSString *hash = nil;
                 NSArray *pairs = [query componentsSeparatedByString:@"&"];
@@ -82,11 +83,13 @@ static NSMutableDictionary *g_cachedUrls = nil;
 
 @end
 
+// 声明需要使用的类
 CHDeclareClass(KGGuessFavorPlayViewController);
 CHDeclareClass(SongInfo);
 
 static const void *kFloatingButtonKey = &kFloatingButtonKey;
 
+// 获取当前歌曲 hash
 static NSString *currentSongHash(id self) {
     SEL songInfoSel = @selector(currentSongInfo);
     if (![self respondsToSelector:songInfoSel]) return nil;
@@ -107,12 +110,14 @@ static NSString *currentSongHash(id self) {
     return hash;
 }
 
-static void showAlert(id self, NSString *message) {
+// 显示简单提示
+static void showAlert(UIViewController *vc, NSString *message) {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"提示" message:message preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:nil]];
-    [self presentViewController:alert animated:YES completion:nil];
+    [vc presentViewController:alert animated:YES completion:nil];
 }
 
+// 显示带 URL 列表的面板
 static void showPanelWithUrls(UIView *parentView, NSArray *urls, NSString *hash) {
     UIView *panelBg = [[UIView alloc] initWithFrame:parentView.bounds];
     panelBg.backgroundColor = [UIColor colorWithWhite:0 alpha:0.5];
@@ -146,6 +151,7 @@ static void showPanelWithUrls(UIView *parentView, NSArray *urls, NSString *hash)
     [closeBtn addTarget:panelBg action:@selector(closePanel) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:closeBtn];
     
+    // Auto Layout
     panel.translatesAutoresizingMaskIntoConstraints = NO;
     titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
     tableView.translatesAutoresizingMaskIntoConstraints = NO;
@@ -174,9 +180,11 @@ static void showPanelWithUrls(UIView *parentView, NSArray *urls, NSString *hash)
         [NSLayoutConstraint constraintWithItem:closeBtn attribute:NSLayoutAttributeBottom relatedBy:NSLayoutRelationEqual toItem:panel attribute:NSLayoutAttributeBottom multiplier:1 constant:-10]
     ]];
     
+    // 存储数据
     objc_setAssociatedObject(panelBg, "urls", urls, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     objc_setAssociatedObject(panelBg, "hash", hash, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     
+    // 动态添加 UITableView 数据源方法
     IMP numberOfRowsIMP = imp_implementationWithBlock(^NSInteger(id self, UITableView *tv, NSInteger section) {
         return [objc_getAssociatedObject(self, "urls") count];
     });
@@ -204,18 +212,22 @@ static void showPanelWithUrls(UIView *parentView, NSArray *urls, NSString *hash)
         if ([app canOpenURL:finalURL]) {
             [app openURL:finalURL options:@{} completionHandler:nil];
         } else {
-            [app openURL:[NSURL URLWithString:@"itms-apps://itunes.apple.com/app/id123456789"] options:@{} completionHandler:nil];
+            // 替换为真实的 m3u8 应用 App Store ID
+            NSURL *appStoreURL = [NSURL URLWithString:@"itms-apps://itunes.apple.com/app/id123456789"];
+            [app openURL:appStoreURL options:@{} completionHandler:nil];
         }
         [self removeFromSuperview];
     });
     class_addMethod([panelBg class], @selector(tableView:didSelectRowAtIndexPath:), didSelectRowIMP, "v@:@@");
     
+    // 添加关闭方法
     IMP closeIMP = imp_implementationWithBlock(^(id self) {
         [self removeFromSuperview];
     });
     class_addMethod([panelBg class], @selector(closePanel), closeIMP, "v@:");
 }
 
+// Hook viewDidLoad 添加悬浮按钮
 CHOptimizedMethod(0, self, void, KGGuessFavorPlayViewController, viewDidLoad) {
     CHSuper0(KGGuessFavorPlayViewController, viewDidLoad);
     
@@ -239,10 +251,11 @@ CHOptimizedMethod(0, self, void, KGGuessFavorPlayViewController, viewDidLoad) {
     objc_setAssociatedObject(self, kFloatingButtonKey, floatBtn, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 
+// 按钮点击方法
 CHOptimizedMethod(0, self, void, KGGuessFavorPlayViewController, floatButtonTapped) {
     NSString *hash = currentSongHash(self);
     if (!hash) {
-        showAlert(self, @"无法获取歌曲信息");
+        showAlert((UIViewController *)self, @"无法获取歌曲信息");
         return;
     }
     
@@ -251,7 +264,7 @@ CHOptimizedMethod(0, self, void, KGGuessFavorPlayViewController, floatButtonTapp
         urls = g_cachedUrls[hash];
     }
     if (!urls || urls.count == 0) {
-        showAlert(self, @"暂无下载链接，请先播放歌曲");
+        showAlert((UIViewController *)self, @"暂无下载链接，请先播放歌曲");
         return;
     }
     
@@ -262,6 +275,7 @@ CHOptimizedMethod(0, self, void, KGGuessFavorPlayViewController, floatButtonTapp
     showPanelWithUrls(vc.view, urls, hash);
 }
 
+// 页面消失时移除按钮和面板
 CHOptimizedMethod(1, self, void, KGGuessFavorPlayViewController, viewDidDisappear, BOOL, animated) {
     CHSuper1(KGGuessFavorPlayViewController, viewDidDisappear, animated);
     
@@ -274,12 +288,12 @@ CHOptimizedMethod(1, self, void, KGGuessFavorPlayViewController, viewDidDisappea
     [panel removeFromSuperview];
 }
 
+// 构造函数
 CHConstructor {
     @autoreleasepool {
+        // 确保协议被注册
         [KGURLProtocol class];
         CHLoadLateClass(KGGuessFavorPlayViewController);
-        CHHook0(KGGuessFavorPlayViewController, viewDidLoad);
-        CHHook0(KGGuessFavorPlayViewController, floatButtonTapped);
-        CHHook1(KGGuessFavorPlayViewController, viewDidDisappear);
+        // 不需要额外调用 CHHook，因为方法已被 CHOptimizedMethod 添加
     }
 }
