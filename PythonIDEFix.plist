@@ -6,7 +6,7 @@
     <dict>
         <key>Bundles</key>
         <array>
-            <string>app.pythonide</string>
+            <string>com.kugou.kgyouth</string>
         </array>
     </dict>
 </dict>
