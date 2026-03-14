@@ -3,16 +3,16 @@
 TARGET = iphone:clang:latest
 ARCHS = arm64
 
-# 插件名称（会生成 .dylib 和 .plist）
+# 插件名称
 TWEAK_NAME = kugou
 
-# 源文件（使用 TWEAK_NAME 作为前缀）
+# 源文件
 kugou_FILES = Tweak.xm
 
-# 链接标志（可选）
+# 链接标志
 kugou_LDFLAGS = -fuse-ld=lld
 
-# 必须包含的框架（如果有需要）
+# 框架
 kugou_FRAMEWORKS = UIKit Foundation
 
 # 包含 Theos 默认设置
