@@ -2,7 +2,7 @@
 #import <CaptainHook/CaptainHook.h>
 #import <objc/runtime.h>
 
-// 自定义 NSURLProtocol 拦截器
+// ==================== 自定义 NSURLProtocol 拦截器 ====================
 @interface KGURLProtocol : NSURLProtocol <NSURLSessionDataDelegate>
 @property (nonatomic, strong) NSURLSessionDataTask *task;
 @property (nonatomic, strong) NSMutableData *responseData;
@@ -82,10 +82,14 @@ static NSMutableDictionary *g_cachedUrls = nil;
 
 @end
 
-// 声明需要使用的类
-CHDeclareClass(KGGuessFavorPlayViewController);
+// ==================== 声明需要使用的播放页类 ====================
+CHDeclareClass(KGYouthPlayViewController);      // 通用播放页
+CHDeclareClass(KGYouthNewPlayViewController);   // 新版播放页
+CHDeclareClass(KGMVPlayerViewController);       // MV播放页
 
 static const void *kFloatingButtonKey = &kFloatingButtonKey;
+
+// ==================== 辅助函数 ====================
 
 // 获取当前歌曲 hash
 static NSString *currentSongHash(id self) {
@@ -207,70 +211,68 @@ static void showPanelWithUrls(UIWindow *window, NSArray *urls, NSString *hash) {
     class_addMethod([panelBg class], @selector(closePanel), closeIMP, "v@:");
 }
 
-// Hook viewDidAppear 添加悬浮按钮（确保视图已加载）
-CHOptimizedMethod(1, self, void, KGGuessFavorPlayViewController, viewDidAppear, BOOL, animated) {
-    CHSuper1(KGGuessFavorPlayViewController, viewDidAppear, animated);
-    
-    // 避免重复添加
-    UIButton *existingBtn = objc_getAssociatedObject(self, kFloatingButtonKey);
-    if (existingBtn) return;
-    
-    UIButton *floatBtn = [UIButton buttonWithType:UIButtonTypeCustom];
-    floatBtn.frame = CGRectMake([UIScreen mainScreen].bounds.size.width - 70, [UIScreen mainScreen].bounds.size.height - 150, 50, 50);
-    floatBtn.backgroundColor = [UIColor colorWithRed:0.2 green:0.5 blue:1.0 alpha:0.9];
-    floatBtn.layer.cornerRadius = 25;
-    [floatBtn setTitle:@"⏬" forState:UIControlStateNormal];
-    [floatBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    [floatBtn addTarget:self action:@selector(floatButtonTapped) forControlEvents:UIControlEventTouchUpInside];
-    
-    // 添加到窗口确保在最上层
-    UIWindow *window = [UIApplication sharedApplication].keyWindow;
-    [window addSubview:floatBtn];
-    [window bringSubviewToFront:floatBtn];
-    
-    objc_setAssociatedObject(self, kFloatingButtonKey, floatBtn, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+// ==================== 通用的 Hook 逻辑（使用宏简化） ====================
+
+#define HOOK_PLAY_VIEW_CONTROLLER(ClassName) \
+CHOptimizedMethod(1, self, void, ClassName, viewDidAppear, BOOL, animated) { \
+    CHSuper1(ClassName, viewDidAppear, animated); \
+    UIButton *existingBtn = objc_getAssociatedObject(self, kFloatingButtonKey); \
+    if (existingBtn) return; \
+    UIButton *floatBtn = [UIButton buttonWithType:UIButtonTypeCustom]; \
+    floatBtn.frame = CGRectMake([UIScreen mainScreen].bounds.size.width - 70, [UIScreen mainScreen].bounds.size.height - 150, 50, 50); \
+    floatBtn.backgroundColor = [UIColor colorWithRed:0.2 green:0.5 blue:1.0 alpha:0.9]; \
+    floatBtn.layer.cornerRadius = 25; \
+    [floatBtn setTitle:@"⏬" forState:UIControlStateNormal]; \
+    [floatBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal]; \
+    [floatBtn addTarget:self action:@selector(floatButtonTapped) forControlEvents:UIControlEventTouchUpInside]; \
+    UIWindow *window = [UIApplication sharedApplication].keyWindow; \
+    [window addSubview:floatBtn]; \
+    [window bringSubviewToFront:floatBtn]; \
+    objc_setAssociatedObject(self, kFloatingButtonKey, floatBtn, OBJC_ASSOCIATION_RETAIN_NONATOMIC); \
+} \
+\
+CHOptimizedMethod(1, self, void, ClassName, viewWillDisappear, BOOL, animated) { \
+    CHSuper1(ClassName, viewWillDisappear, animated); \
+    UIButton *floatBtn = objc_getAssociatedObject(self, kFloatingButtonKey); \
+    [floatBtn removeFromSuperview]; \
+    objc_setAssociatedObject(self, kFloatingButtonKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC); \
+    UIWindow *window = [UIApplication sharedApplication].keyWindow; \
+    UIView *panel = [window viewWithTag:9999]; \
+    [panel removeFromSuperview]; \
+} \
+\
+CHOptimizedMethod(0, self, void, ClassName, floatButtonTapped) { \
+    NSString *hash = currentSongHash(self); \
+    if (!hash) { \
+        showAlert((UIViewController *)self, @"无法获取歌曲信息"); \
+        return; \
+    } \
+    NSArray *urls = nil; \
+    @synchronized(g_cachedUrls) { \
+        urls = g_cachedUrls[hash]; \
+    } \
+    if (!urls || urls.count == 0) { \
+        showAlert((UIViewController *)self, @"暂无下载链接，请先播放歌曲"); \
+        return; \
+    } \
+    UIWindow *window = [UIApplication sharedApplication].keyWindow; \
+    showPanelWithUrls(window, urls, hash); \
 }
 
-// 页面消失时移除按钮
-CHOptimizedMethod(1, self, void, KGGuessFavorPlayViewController, viewWillDisappear, BOOL, animated) {
-    CHSuper1(KGGuessFavorPlayViewController, viewWillDisappear, animated);
-    
-    UIButton *floatBtn = objc_getAssociatedObject(self, kFloatingButtonKey);
-    [floatBtn removeFromSuperview];
-    objc_setAssociatedObject(self, kFloatingButtonKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    
-    // 同时移除可能存在的面板
-    UIWindow *window = [UIApplication sharedApplication].keyWindow;
-    UIView *panel = [window viewWithTag:9999];
-    [panel removeFromSuperview];
-}
+// ==================== 为每个类应用 Hook ====================
+HOOK_PLAY_VIEW_CONTROLLER(KGYouthPlayViewController)
+HOOK_PLAY_VIEW_CONTROLLER(KGYouthNewPlayViewController)
+HOOK_PLAY_VIEW_CONTROLLER(KGMVPlayerViewController)
 
-// 按钮点击方法
-CHOptimizedMethod(0, self, void, KGGuessFavorPlayViewController, floatButtonTapped) {
-    NSString *hash = currentSongHash(self);
-    if (!hash) {
-        showAlert((UIViewController *)self, @"无法获取歌曲信息");
-        return;
-    }
-    
-    NSArray *urls = nil;
-    @synchronized(g_cachedUrls) {
-        urls = g_cachedUrls[hash];
-    }
-    if (!urls || urls.count == 0) {
-        showAlert((UIViewController *)self, @"暂无下载链接，请先播放歌曲");
-        return;
-    }
-    
-    UIWindow *window = [UIApplication sharedApplication].keyWindow;
-    showPanelWithUrls(window, urls, hash);
-}
-
-// 构造函数
+// ==================== 构造函数 ====================
 CHConstructor {
     @autoreleasepool {
         // 确保协议被注册
         [KGURLProtocol class];
-        CHLoadLateClass(KGGuessFavorPlayViewController);
+        
+        // 加载所有可能的播放页类（如果存在则生效）
+        CHLoadLateClass(KGYouthPlayViewController);
+        CHLoadLateClass(KGYouthNewPlayViewController);
+        CHLoadLateClass(KGMVPlayerViewController);
     }
 }
