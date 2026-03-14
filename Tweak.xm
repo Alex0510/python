@@ -59,7 +59,6 @@ static NSMutableDictionary *g_cachedUrls = nil;
         if (!jsonError && [json isKindOfClass:[NSDictionary class]]) {
             NSArray *urls = json[@"url"];
             if ([urls isKindOfClass:[NSArray class]] && urls.count > 0) {
-                // 从请求 URL 中提取 hash 参数
                 NSString *query = self.request.URL.query;
                 NSString *hash = nil;
                 NSArray *pairs = [query componentsSeparatedByString:@"&"];
@@ -117,26 +116,31 @@ static void showAlert(UIViewController *vc, NSString *message) {
     [vc presentViewController:alert animated:YES completion:nil];
 }
 
-// 显示带 URL 列表的面板
+// 显示带 URL 列表的面板（使用 frame 布局）
 static void showPanelWithUrls(UIView *parentView, NSArray *urls, NSString *hash) {
+    CGFloat panelWidth = 300;
+    CGFloat panelHeight = 400;
+    CGFloat panelX = (parentView.bounds.size.width - panelWidth) / 2;
+    CGFloat panelY = (parentView.bounds.size.height - panelHeight) / 2;
+    
     UIView *panelBg = [[UIView alloc] initWithFrame:parentView.bounds];
     panelBg.backgroundColor = [UIColor colorWithWhite:0 alpha:0.5];
     panelBg.tag = 9999;
     [parentView addSubview:panelBg];
     
-    UIView *panel = [[UIView alloc] init];
+    UIView *panel = [[UIView alloc] initWithFrame:CGRectMake(panelX, panelY, panelWidth, panelHeight)];
     panel.backgroundColor = [UIColor whiteColor];
     panel.layer.cornerRadius = 12;
     panel.clipsToBounds = YES;
     [panelBg addSubview:panel];
     
-    UILabel *titleLabel = [[UILabel alloc] init];
+    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(10, 10, panelWidth-20, 30)];
     titleLabel.text = @"选择下载地址：";
     titleLabel.font = [UIFont boldSystemFontOfSize:16];
     titleLabel.textAlignment = NSTextAlignmentCenter;
     [panel addSubview:titleLabel];
     
-    UITableView *tableView = [[UITableView alloc] init];
+    UITableView *tableView = [[UITableView alloc] initWithFrame:CGRectMake(0, 50, panelWidth, panelHeight-100) style:UITableViewStylePlain];
     tableView.dataSource = (id<UITableViewDataSource>)panelBg;
     tableView.delegate = (id<UITableViewDelegate>)panelBg;
     tableView.rowHeight = 44;
@@ -144,41 +148,13 @@ static void showPanelWithUrls(UIView *parentView, NSArray *urls, NSString *hash)
     [panel addSubview:tableView];
     
     UIButton *closeBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    closeBtn.frame = CGRectMake(10, panelHeight-50, panelWidth-20, 40);
     [closeBtn setTitle:@"关闭" forState:UIControlStateNormal];
     closeBtn.backgroundColor = [UIColor lightGrayColor];
     closeBtn.layer.cornerRadius = 8;
     [closeBtn setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
     [closeBtn addTarget:panelBg action:@selector(closePanel) forControlEvents:UIControlEventTouchUpInside];
     [panel addSubview:closeBtn];
-    
-    // Auto Layout
-    panel.translatesAutoresizingMaskIntoConstraints = NO;
-    titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    tableView.translatesAutoresizingMaskIntoConstraints = NO;
-    closeBtn.translatesAutoresizingMaskIntoConstraints = NO;
-    
-    [panelBg addConstraints:@[
-        [NSLayoutConstraint constraintWithItem:panel attribute:NSLayoutAttributeCenterX relatedBy:NSLayoutRelationEqual toItem:panelBg attribute:NSLayoutAttributeCenterX multiplier:1 constant:0],
-        [NSLayoutConstraint constraintWithItem:panel attribute:NSLayoutAttributeCenterY relatedBy:NSLayoutRelationEqual toItem:panelBg attribute:NSLayoutAttributeCenterY multiplier:1 constant:0],
-        [NSLayoutConstraint constraintWithItem:panel attribute:NSLayoutAttributeWidth constant:300],
-        [NSLayoutConstraint constraintWithItem:panel attribute:NSLayoutAttributeHeight constant:400]
-    ]];
-    
-    [panel addConstraints:@[
-        [NSLayoutConstraint constraintWithItem:titleLabel attribute:NSLayoutAttributeTop relatedBy:NSLayoutRelationEqual toItem:panel attribute:NSLayoutAttributeTop multiplier:1 constant:10],
-        [NSLayoutConstraint constraintWithItem:titleLabel attribute:NSLayoutAttributeLeading relatedBy:NSLayoutRelationEqual toItem:panel attribute:NSLayoutAttributeLeading multiplier:1 constant:10],
-        [NSLayoutConstraint constraintWithItem:titleLabel attribute:NSLayoutAttributeTrailing relatedBy:NSLayoutRelationEqual toItem:panel attribute:NSLayoutAttributeTrailing multiplier:1 constant:-10],
-        
-        [NSLayoutConstraint constraintWithItem:tableView attribute:NSLayoutAttributeTop relatedBy:NSLayoutRelationEqual toItem:titleLabel attribute:NSLayoutAttributeBottom multiplier:1 constant:10],
-        [NSLayoutConstraint constraintWithItem:tableView attribute:NSLayoutAttributeLeading relatedBy:NSLayoutRelationEqual toItem:panel attribute:NSLayoutAttributeLeading multiplier:1 constant:0],
-        [NSLayoutConstraint constraintWithItem:tableView attribute:NSLayoutAttributeTrailing relatedBy:NSLayoutRelationEqual toItem:panel attribute:NSLayoutAttributeTrailing multiplier:1 constant:0],
-        
-        [NSLayoutConstraint constraintWithItem:closeBtn attribute:NSLayoutAttributeTop relatedBy:NSLayoutRelationEqual toItem:tableView attribute:NSLayoutAttributeBottom multiplier:1 constant:10],
-        [NSLayoutConstraint constraintWithItem:closeBtn attribute:NSLayoutAttributeLeading relatedBy:NSLayoutRelationEqual toItem:panel attribute:NSLayoutAttributeLeading multiplier:1 constant:10],
-        [NSLayoutConstraint constraintWithItem:closeBtn attribute:NSLayoutAttributeTrailing relatedBy:NSLayoutRelationEqual toItem:panel attribute:NSLayoutAttributeTrailing multiplier:1 constant:-10],
-        [NSLayoutConstraint constraintWithItem:closeBtn attribute:NSLayoutAttributeHeight constant:40],
-        [NSLayoutConstraint constraintWithItem:closeBtn attribute:NSLayoutAttributeBottom relatedBy:NSLayoutRelationEqual toItem:panel attribute:NSLayoutAttributeBottom multiplier:1 constant:-10]
-    ]];
     
     // 存储数据
     objc_setAssociatedObject(panelBg, "urls", urls, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -232,21 +208,15 @@ CHOptimizedMethod(0, self, void, KGGuessFavorPlayViewController, viewDidLoad) {
     CHSuper0(KGGuessFavorPlayViewController, viewDidLoad);
     
     UIButton *floatBtn = [UIButton buttonWithType:UIButtonTypeCustom];
+    floatBtn.frame = CGRectMake([UIScreen mainScreen].bounds.size.width - 70, [UIScreen mainScreen].bounds.size.height - 150, 50, 50);
     floatBtn.backgroundColor = [UIColor colorWithRed:0.2 green:0.5 blue:1.0 alpha:0.9];
     floatBtn.layer.cornerRadius = 25;
     [floatBtn setTitle:@"⏬" forState:UIControlStateNormal];
     [floatBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
     [floatBtn addTarget:self action:@selector(floatButtonTapped) forControlEvents:UIControlEventTouchUpInside];
     
-    floatBtn.translatesAutoresizingMaskIntoConstraints = NO;
     UIViewController *vc = (UIViewController *)self;
     [vc.view addSubview:floatBtn];
-    [vc.view addConstraints:@[
-        [NSLayoutConstraint constraintWithItem:floatBtn attribute:NSLayoutAttributeTrailing relatedBy:NSLayoutRelationEqual toItem:vc.view attribute:NSLayoutAttributeTrailing multiplier:1 constant:-20],
-        [NSLayoutConstraint constraintWithItem:floatBtn attribute:NSLayoutAttributeBottom relatedBy:NSLayoutRelationEqual toItem:vc.view attribute:NSLayoutAttributeBottom multiplier:1 constant:-100],
-        [NSLayoutConstraint constraintWithItem:floatBtn attribute:NSLayoutAttributeWidth constant:50],
-        [NSLayoutConstraint constraintWithItem:floatBtn attribute:NSLayoutAttributeHeight constant:50]
-    ]];
     
     objc_setAssociatedObject(self, kFloatingButtonKey, floatBtn, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
@@ -294,6 +264,6 @@ CHConstructor {
         // 确保协议被注册
         [KGURLProtocol class];
         CHLoadLateClass(KGGuessFavorPlayViewController);
-        // 不需要额外调用 CHHook，因为方法已被 CHOptimizedMethod 添加
+        // 方法钩子已通过 CHOptimizedMethod 注册，无需额外 CHHook
     }
 }
