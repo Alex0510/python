@@ -82,7 +82,7 @@ static NSMutableDictionary *g_cachedUrls = nil;
 
 @end
 
-// 声明需要使用的类（只声明实际使用的类）
+// 声明需要使用的类
 CHDeclareClass(KGGuessFavorPlayViewController);
 
 static const void *kFloatingButtonKey = &kFloatingButtonKey;
@@ -115,17 +115,22 @@ static void showAlert(UIViewController *vc, NSString *message) {
     [vc presentViewController:alert animated:YES completion:nil];
 }
 
-// 显示带 URL 列表的面板（使用 frame 布局）
-static void showPanelWithUrls(UIView *parentView, NSArray *urls, NSString *hash) {
+// 显示带 URL 列表的面板（添加到窗口）
+static void showPanelWithUrls(UIWindow *window, NSArray *urls, NSString *hash) {
+    // 移除旧面板
+    UIView *oldPanel = [window viewWithTag:9999];
+    [oldPanel removeFromSuperview];
+    
     CGFloat panelWidth = 300;
     CGFloat panelHeight = 400;
-    CGFloat panelX = (parentView.bounds.size.width - panelWidth) / 2;
-    CGFloat panelY = (parentView.bounds.size.height - panelHeight) / 2;
+    CGFloat panelX = (window.bounds.size.width - panelWidth) / 2;
+    CGFloat panelY = (window.bounds.size.height - panelHeight) / 2;
     
-    UIView *panelBg = [[UIView alloc] initWithFrame:parentView.bounds];
+    UIView *panelBg = [[UIView alloc] initWithFrame:window.bounds];
     panelBg.backgroundColor = [UIColor colorWithWhite:0 alpha:0.5];
     panelBg.tag = 9999;
-    [parentView addSubview:panelBg];
+    [window addSubview:panelBg];
+    [window bringSubviewToFront:panelBg];
     
     UIView *panel = [[UIView alloc] initWithFrame:CGRectMake(panelX, panelY, panelWidth, panelHeight)];
     panel.backgroundColor = [UIColor whiteColor];
@@ -202,9 +207,13 @@ static void showPanelWithUrls(UIView *parentView, NSArray *urls, NSString *hash)
     class_addMethod([panelBg class], @selector(closePanel), closeIMP, "v@:");
 }
 
-// Hook viewDidLoad 添加悬浮按钮
-CHOptimizedMethod(0, self, void, KGGuessFavorPlayViewController, viewDidLoad) {
-    CHSuper0(KGGuessFavorPlayViewController, viewDidLoad);
+// Hook viewDidAppear 添加悬浮按钮（确保视图已加载）
+CHOptimizedMethod(1, self, void, KGGuessFavorPlayViewController, viewDidAppear, BOOL, animated) {
+    CHSuper1(KGGuessFavorPlayViewController, viewDidAppear, animated);
+    
+    // 避免重复添加
+    UIButton *existingBtn = objc_getAssociatedObject(self, kFloatingButtonKey);
+    if (existingBtn) return;
     
     UIButton *floatBtn = [UIButton buttonWithType:UIButtonTypeCustom];
     floatBtn.frame = CGRectMake([UIScreen mainScreen].bounds.size.width - 70, [UIScreen mainScreen].bounds.size.height - 150, 50, 50);
@@ -214,10 +223,26 @@ CHOptimizedMethod(0, self, void, KGGuessFavorPlayViewController, viewDidLoad) {
     [floatBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
     [floatBtn addTarget:self action:@selector(floatButtonTapped) forControlEvents:UIControlEventTouchUpInside];
     
-    UIViewController *vc = (UIViewController *)self;
-    [vc.view addSubview:floatBtn];
+    // 添加到窗口确保在最上层
+    UIWindow *window = [UIApplication sharedApplication].keyWindow;
+    [window addSubview:floatBtn];
+    [window bringSubviewToFront:floatBtn];
     
     objc_setAssociatedObject(self, kFloatingButtonKey, floatBtn, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+// 页面消失时移除按钮
+CHOptimizedMethod(1, self, void, KGGuessFavorPlayViewController, viewWillDisappear, BOOL, animated) {
+    CHSuper1(KGGuessFavorPlayViewController, viewWillDisappear, animated);
+    
+    UIButton *floatBtn = objc_getAssociatedObject(self, kFloatingButtonKey);
+    [floatBtn removeFromSuperview];
+    objc_setAssociatedObject(self, kFloatingButtonKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    
+    // 同时移除可能存在的面板
+    UIWindow *window = [UIApplication sharedApplication].keyWindow;
+    UIView *panel = [window viewWithTag:9999];
+    [panel removeFromSuperview];
 }
 
 // 按钮点击方法
@@ -237,24 +262,8 @@ CHOptimizedMethod(0, self, void, KGGuessFavorPlayViewController, floatButtonTapp
         return;
     }
     
-    UIViewController *vc = (UIViewController *)self;
-    UIView *existingPanel = [vc.view viewWithTag:9999];
-    [existingPanel removeFromSuperview];
-    
-    showPanelWithUrls(vc.view, urls, hash);
-}
-
-// 页面消失时移除按钮和面板
-CHOptimizedMethod(1, self, void, KGGuessFavorPlayViewController, viewDidDisappear, BOOL, animated) {
-    CHSuper1(KGGuessFavorPlayViewController, viewDidDisappear, animated);
-    
-    UIButton *floatBtn = objc_getAssociatedObject(self, kFloatingButtonKey);
-    [floatBtn removeFromSuperview];
-    objc_setAssociatedObject(self, kFloatingButtonKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    
-    UIViewController *vc = (UIViewController *)self;
-    UIView *panel = [vc.view viewWithTag:9999];
-    [panel removeFromSuperview];
+    UIWindow *window = [UIApplication sharedApplication].keyWindow;
+    showPanelWithUrls(window, urls, hash);
 }
 
 // 构造函数
@@ -263,6 +272,5 @@ CHConstructor {
         // 确保协议被注册
         [KGURLProtocol class];
         CHLoadLateClass(KGGuessFavorPlayViewController);
-        // 方法钩子已通过 CHOptimizedMethod 注册，无需额外 CHHook
     }
 }
