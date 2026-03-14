@@ -13,7 +13,7 @@ kugou_FILES = Tweak.xm
 kugou_LDFLAGS = -fuse-ld=lld
 
 # 必须包含的框架（如果有需要）
-# kugou_FRAMEWORKS = UIKit Foundation
+kugou_FRAMEWORKS = UIKit Foundation
 
 # 包含 Theos 默认设置
 include $(THEOS)/makefiles/common.mk
