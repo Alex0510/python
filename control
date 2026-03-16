@@ -1,9 +1,9 @@
-Package: com.kugou.eric
-Name: kugou
+Package: com.danlan.eric
+Name: blued
 Depends: mobilesubstrate (>= 0.9.5000)
 Version: 1.0.0
 Architecture: iphoneos-arm
-Description: 歌曲下载
+Description: 测试
 Maintainer: Mr.Eric
 Author: Mr.Eric
 Section: Tweaks
