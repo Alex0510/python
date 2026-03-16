@@ -2,8 +2,8 @@ name: Build DEB with Theos
 
 on:
   push:
-    tags: [ 'v*' ]
-  workflow_dispatch:
+    tags: [ 'v*' ]          # 推送 tag 时触发（格式如 v1.0.0）
+  workflow_dispatch:         # 允许手动触发
 
 jobs:
   build:
@@ -81,28 +81,24 @@ jobs:
           echo "LD=/usr/bin/ld.lld" >> $GITHUB_ENV
           echo "LDFLAGS=-fuse-ld=lld" >> $GITHUB_ENV
 
+      - name: 创建输出目录
+        run: mkdir -p output
+
       - name: 构建 .deb 包
         run: |
           make clean || true
           make package TARGET=iphone:clang:latest LD=/usr/bin/ld.lld LDFLAGS="-fuse-ld=lld" ARCHS=arm64
-          mkdir -p output
           find . -name "*.deb" -exec mv {} output/ \;
-
-      # 调试步骤：确认 control 文件位置（可选，可删除）
-      - name: 查找 control 文件
-        run: |
-          find . -name "control" -type f
 
       - name: 提取版本号
         id: version
         run: |
-          # 尝试多个常见位置
+          # 尝试查找 control 文件（支持根目录或 layout/DEBIAN/）
+          CONTROL_FILE=""
           if [ -f "control" ]; then
             CONTROL_FILE="control"
           elif [ -f "layout/DEBIAN/control" ]; then
             CONTROL_FILE="layout/DEBIAN/control"
-          else
-            CONTROL_FILE=""
           fi
 
           if [ -n "$CONTROL_FILE" ]; then
@@ -132,20 +128,18 @@ jobs:
             exit 1
           fi
 
-      - name: 确保 output 目录包含 .deb 文件
+      - name: 打包源码
         run: |
-          if [ ! -f "output/PythonHook-${{ env.VERSION }}.deb" ]; then
-            echo "错误：文件 output/PythonHook-${{ env.VERSION }}.deb 不存在！"
+          mkdir -p output   # 确保 output 目录存在
+          git archive --format=zip --output=output/PythonHook-source.zip HEAD
+          if [ ! -f "output/PythonHook-source.zip" ]; then
+            echo "错误：源码包生成失败！"
             exit 1
           fi
-          echo "文件存在，准备上传"
+          echo "源码包生成成功：$(ls -la output/PythonHook-source.zip)"
 
       - name: 列出 output 目录内容（调试）
         run: ls -la output/
-
-      - name: 打包源码
-        run: |
-          git archive --format=zip --output=output/BluedHook-source.zip HEAD
 
       - name: 上传到 Release
         uses: softprops/action-gh-release@v2
@@ -156,12 +150,9 @@ jobs:
             output/PythonHook-source.zip
           token: ${{ secrets.GITHUB_TOKEN }}
           name: Release ${{ github.ref_name }}
-          # 如果有 CHANGELOG.md 可取消下一行注释
-          # body_path: CHANGELOG.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 上传 .deb 包到 Artifacts（始终上传）
       - name: 上传 .deb 包到 Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -169,7 +160,6 @@ jobs:
           path: output/PythonHook-${{ env.VERSION }}.deb
           if-no-files-found: error
 
-      # 上传源码包到 Artifacts
       - name: 上传源码包到 Artifacts
         uses: actions/upload-artifact@v4
         with:
