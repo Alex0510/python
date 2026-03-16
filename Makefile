@@ -6,7 +6,7 @@ INSTALL_TARGET_PROCESSES = blued
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = blued
-RemoveAdmsFields_FILES = Tweak.x
+RemoveAdmsFields_FILES = Tweak.xm
 RemoveAdmsFields_CFLAGS = -fobjc-arc
 
 include $(THEOS_MAKE_PATH)/tweak.mk
