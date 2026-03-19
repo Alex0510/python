@@ -1,128 +1,75 @@
-#import <UIKit/UIKit.h>
+#import <Foundation/Foundation.h>
 
-// 根据之前解析的头文件，声明目标类以便编译通过
-@interface ZSLoginView : UIViewController
-// 属性
-@property (retain, nonatomic) UITextField *zhucema;          // 注册码输入框
-@property (retain, nonatomic) UILabel *zhuangtailan;          // 状态栏
-@property (retain, nonatomic) UIButton *denglubtn;            // 登录按钮
-@property (retain, nonatomic) id status_res;                  // 登录状态结果
-@property (retain, nonatomic) NSTimer *timeoutTimer;          // 超时定时器
-@property (assign, nonatomic) BOOL requestTimedOut;           // 请求超时标志
-@property (retain, nonatomic) NSURLSessionDataTask *dataTask; // 网络任务
+// 定义要拦截的请求 URL 关键字（根据实际抓包结果）
+#define TARGET_URL @"guyubao.com"          // 域名，可根据需要更改为完整路径
 
-// 方法
-- (void)button_Login;
-- (void)doWork;
-- (void)handleRequestTimeout;
-- (void)showAlertWithMessage:(id)arg1;
-- (void)showAlertWithTitle:(id)title message:(id)message;
-- (void)releaseDylibPluginWithSourceName:(id)name sourceExtension:(id)ext 
-                        destinationName:(id)destName destinationExtension:(id)destExt;
+// 伪造的成功响应数据（直接复制你抓包得到的 JSON）
+static NSString *fakeResponseJSON = @"{\"status\":2000,\"success\":true,\"data\":{\"data\":\"ECD8382CE5CC637B457D7BE9507DD70BD32BB66EE88D42D9565C9C545990481BFA6D673C9EFFC9492DD4C205938181A4C32935FEE0B50FEC3A4BC50656FD4C242F74C87B40E1300DB16236254D8D8CB83E77BFFDEDCFD3843A57E5330097C590EA52827BEA54D3B12395D630FDE630034735C42B49D669526313E6CFCDB73CE4EB9CC1465C907A0D50A8DA4C68EE718441BF11EF3030540316CE5FAD3BE9E696B286728CC0E32FD858278FF15B66A90A6BFEB7E0D8D7591395E3AB9C2F6AAEAB80EB36E4D7A95CE647F4B72A792FE690E3205A6E47775951AA1C06A166C2391DE5A194A635118A7D64A9DC422252330A0F9551E78DF8DB5D79EDCD68FF417754716E7102D145CF04FD84B927F6EE7A9715AB68B891174A2FC305D74484283B72\",\"jsondata\":\"{\\\"msg_a\\\":\\\"success\\\",\\\"fushuxing\\\":\\\"自定义时长卡\\\",\\\"time_S\\\":\\\"352997994\\\",\\\"Ver\\\":\\\"2.5.5\\\",\\\"Retn\\\":\\\"com.xie.workingpartnerbeta5g|com.xingin|ss.iphone\\\",\\\"card_type\\\":\\\"iOS逆向助手永久卡\\\",\\\"mac\\\":\\\"DAB309F6-3579-4C2B-96F3-434E9D0A8F24\\\",\\\"card_note\\\":\\\"发布\\\",\\\"card_bind_txt\\\":\\\"无\\\",\\\"Login_ip\\\":\\\"127.0.0.1\\\",\\\"card_point\\\":\\\"0\\\",\\\"Login_location\\\":\\\"本机地址\\\",\\\"Login_time\\\":\\\"2025-03-19 22:55:10\\\",\\\"card_expirationdate\\\":\\\"2036-05-26 13:55:04\\\",\\\"card_bind_num\\\":\\\"99999999\\\",\\\"card_Agent\\\":\\\"老板号\\\",\\\"card_QQ\\\":\\\"\\\",\\\"card_user\\\":\\\"\\\",\\\"card\\\":\\\"YJK763991374H521841984C0\\\"}\"},\"msg\":\"验证成功\"}";
+
+// ==================== 自定义 NSURLProtocol 拦截器 ====================
+@interface FakeResponseProtocol : NSURLProtocol
 @end
 
-// ==================== 方案一：直接让登录按钮的点击方法失效，并伪造成功状态 ====================
+@implementation FakeResponseProtocol
+
+// 决定是否拦截该请求
++ (BOOL)canInitWithRequest:(NSURLRequest *)request {
+    NSString *urlString = request.URL.absoluteString;
+    // 检查是否包含目标域名（可根据需要改为更精确的路径匹配）
+    if ([urlString containsString:TARGET_URL]) {
+        NSLog(@"[FakeProtocol] 拦截请求: %@", urlString);
+        return YES;
+    }
+    return NO;
+}
+
++ (NSURLRequest *)canonicalRequestForRequest:(NSURLRequest *)request {
+    return request;
+}
+
+// 开始加载（伪造响应）
+- (void)startLoading {
+    // 构造 HTTP 响应，状态码 200，内容类型 JSON
+    NSHTTPURLResponse *response = [[NSHTTPURLResponse alloc] initWithURL:self.request.URL
+                                                               statusCode:200
+                                                              HTTPVersion:@"HTTP/1.1"
+                                                             headerFields:@{@"Content-Type": @"application/json"}];
+    
+    // 将 JSON 字符串转为 NSData
+    NSData *fakeData = [fakeResponseJSON dataUsingEncoding:NSUTF8StringEncoding];
+    
+    // 通过 client 返回数据
+    [self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
+    [self.client URLProtocol:self didLoadData:fakeData];
+    [self.client URLProtocolDidFinishLoading:self];
+}
+
+- (void)stopLoading {
+    // 无需额外操作
+}
+
+@end
+
+// ==================== 辅助：防止弹出错误提示（可选） ====================
+// 假设 ZSLoginView 类存在，我们 Hook 掉弹窗方法，让界面更干净
 %hook ZSLoginView
 
-// 1. 拦截登录按钮的点击事件
-- (void)button_Login {
-    %log; // 打印日志，便于调试
-
-    // 方案 A：直接替换为无操作，即点击登录按钮什么也不做，并伪造登录成功界面
-    // 设置状态栏文本为"登录成功"
-    self.zhuangtailan.text = @"登录成功";
-    self.zhuangtailan.textColor = [UIColor greenColor];
-    
-    // 伪造一个成功的 status_res (假设它是 NSString 类型)
-    // 这里需要根据实际 status_res 的类型来伪造，可能是模型对象
-    if ([self.status_res isKindOfClass:[NSString class]]) {
-        self.status_res = @"success";
-    }
-    
-    // 隐藏输入框和按钮，模拟已登录状态
-    self.zhucema.hidden = YES;
-    self.denglubtn.hidden = YES;
-    
-    // 如果登录成功后通常会跳转，可以手动触发跳转 (需要知道跳转的方法名)
-    // [self.navigationController pushViewController:[[NextViewController alloc] init] animated:YES];
-    
-    // 注意：不要调用 %orig，这样原始方法体就不会执行，从而跳过所有网络请求和验证逻辑
-}
-
-// 2. 拦截网络请求的核心工作方法，防止其发起验证
-- (void)doWork {
-    %log;
-    // 直接返回，不执行原始网络请求
-    // 这样即使其他地方调用了 doWork，也不会真的发起验证
-    return;
-}
-
-// 3. 拦截超时处理，避免弹出超时提示
-- (void)handleRequestTimeout {
-    %log;
-    // 取消定时器
-    [self.timeoutTimer invalidate];
-    self.timeoutTimer = nil;
-    self.requestTimedOut = YES;
-    
-    // 停止动画
-    [self.activityIndicator stopAnimating];
-    self.loadingLabel.hidden = YES;
-    
-    // 可以设置状态栏为"网络错误，但已绕过"
-    self.zhuangtailan.text = @"已绕过验证";
-    self.zhuangtailan.textColor = [UIColor orangeColor];
-    
-    // 不调用 %orig，避免弹出超时提示框
-}
-
-// 4. 拦截所有弹窗，防止显示错误信息 (可选)
 - (void)showAlertWithMessage:(id)message {
     %log;
-    // 不显示任何弹窗
+    // 什么都不做，屏蔽弹窗
     return;
 }
 
 - (void)showAlertWithTitle:(id)title message:(id)message {
     %log;
-    // 不显示任何弹窗
     return;
 }
 
 %end
 
-
-// ==================== 方案二：如果登录验证有单独的返回值方法 ====================
-// 假设存在一个类似 - (BOOL)validateLogin 的方法 (通过 class-dump 或逆向分析得到)
-/*
-%hook ZSLoginView
-- (BOOL)validateLogin {
-    %log;
-    // 直接返回 YES，表示验证通过
-    return YES;
+// ==================== 在加载动态库时注册协议 ====================
+%ctor {
+    // 注册自定义协议拦截器
+    [NSURLProtocol registerClass:[FakeResponseProtocol class]];
+    NSLog(@"[FakeProtocol] 已注册，等待拦截请求...");
 }
-%end
-*/
-
-
-// ==================== 方案三：自动填充任意注册码，并触发登录 ====================
-/*
-%hook ZSLoginView
-
-// 在视图出现时自动填充并触发登录
-- (void)viewDidAppear:(BOOL)animated {
-    %orig; // 先执行原始方法
-    
-    // 延迟0.5秒执行，确保界面完全加载
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), 
-                   dispatch_get_main_queue(), ^{
-        // 自动填充任意注册码 (比如 "123456")
-        self.zhucema.text = @"123456";
-        
-        // 模拟点击登录按钮
-        [self button_Login];
-    });
-}
-
-%end
-*/
