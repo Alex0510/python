@@ -1,106 +1,128 @@
-#import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 
-// 正则模式：匹配 https:// 任意主机 /users? 后第一个参数为 column、aaid 或 extra_info
-static NSString * const kURLPattern = @"https://.*/users\\?(column|aaid|extra_info)";
+// 根据之前解析的头文件，声明目标类以便编译通过
+@interface ZSLoginView : UIViewController
+// 属性
+@property (retain, nonatomic) UITextField *zhucema;          // 注册码输入框
+@property (retain, nonatomic) UILabel *zhuangtailan;          // 状态栏
+@property (retain, nonatomic) UIButton *denglubtn;            // 登录按钮
+@property (retain, nonatomic) id status_res;                  // 登录状态结果
+@property (retain, nonatomic) NSTimer *timeoutTimer;          // 超时定时器
+@property (assign, nonatomic) BOOL requestTimedOut;           // 请求超时标志
+@property (retain, nonatomic) NSURLSessionDataTask *dataTask; // 网络任务
 
-// 要删除的广告字段列表（位于 body.extra 中）
-static NSArray<NSString *> *kAdFieldsToRemove = nil;
+// 方法
+- (void)button_Login;
+- (void)doWork;
+- (void)handleRequestTimeout;
+- (void)showAlertWithMessage:(id)arg1;
+- (void)showAlertWithTitle:(id)title message:(id)message;
+- (void)releaseDylibPluginWithSourceName:(id)name sourceExtension:(id)ext 
+                        destinationName:(id)destName destinationExtension:(id)destExt;
+@end
 
-// 递归清理函数（如果需要根据值清理，可扩展此函数）
-static void removeAdFieldsFromJSON(id jsonObject) {
-    if ([jsonObject isKindOfClass:[NSMutableDictionary class]]) {
-        NSMutableDictionary *dict = (NSMutableDictionary *)jsonObject;
-        // 如果当前字典是 "extra"，则删除指定的广告字段
-        // 注意：这里假设 extra 是字典，我们无法直接知道哪个字典是 extra，因此采用更通用的方式：
-        // 如果字典包含这些键中的任何一个，就尝试删除它们
-        for (NSString *key in [dict allKeys]) {
-            if ([kAdFieldsToRemove containsObject:key]) {
-                [dict removeObjectForKey:key];
-            } else {
-                // 递归处理值
-                removeAdFieldsFromJSON(dict[key]);
-            }
-        }
-    } else if ([jsonObject isKindOfClass:[NSMutableArray class]]) {
-        NSMutableArray *array = (NSMutableArray *)jsonObject;
-        for (id item in array) {
-            removeAdFieldsFromJSON(item);
-        }
+// ==================== 方案一：直接让登录按钮的点击方法失效，并伪造成功状态 ====================
+%hook ZSLoginView
+
+// 1. 拦截登录按钮的点击事件
+- (void)button_Login {
+    %log; // 打印日志，便于调试
+
+    // 方案 A：直接替换为无操作，即点击登录按钮什么也不做，并伪造登录成功界面
+    // 设置状态栏文本为"登录成功"
+    self.zhuangtailan.text = @"登录成功";
+    self.zhuangtailan.textColor = [UIColor greenColor];
+    
+    // 伪造一个成功的 status_res (假设它是 NSString 类型)
+    // 这里需要根据实际 status_res 的类型来伪造，可能是模型对象
+    if ([self.status_res isKindOfClass:[NSString class]]) {
+        self.status_res = @"success";
     }
-    // 其他类型无需处理
+    
+    // 隐藏输入框和按钮，模拟已登录状态
+    self.zhucema.hidden = YES;
+    self.denglubtn.hidden = YES;
+    
+    // 如果登录成功后通常会跳转，可以手动触发跳转 (需要知道跳转的方法名)
+    // [self.navigationController pushViewController:[[NextViewController alloc] init] animated:YES];
+    
+    // 注意：不要调用 %orig，这样原始方法体就不会执行，从而跳过所有网络请求和验证逻辑
 }
 
-%hook __NSCFURLSession   // 如果此私有类不生效，可尝试改为 __NSURLSessionLocal
+// 2. 拦截网络请求的核心工作方法，防止其发起验证
+- (void)doWork {
+    %log;
+    // 直接返回，不执行原始网络请求
+    // 这样即使其他地方调用了 doWork，也不会真的发起验证
+    return;
+}
 
-- (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request
-                            completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *error))completionHandler {
+// 3. 拦截超时处理，避免弹出超时提示
+- (void)handleRequestTimeout {
+    %log;
+    // 取消定时器
+    [self.timeoutTimer invalidate];
+    self.timeoutTimer = nil;
+    self.requestTimedOut = YES;
+    
+    // 停止动画
+    [self.activityIndicator stopAnimating];
+    self.loadingLabel.hidden = YES;
+    
+    // 可以设置状态栏为"网络错误，但已绕过"
+    self.zhuangtailan.text = @"已绕过验证";
+    self.zhuangtailan.textColor = [UIColor orangeColor];
+    
+    // 不调用 %orig，避免弹出超时提示框
+}
 
-    // 初始化广告字段列表（只执行一次）
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        kAdFieldsToRemove = @[
-            @"adms_operating",
-            @"nearby_dating",
-            @"adms_user",
-            @"adms",
-            @"adms_activity"
-        ];
-    });
+// 4. 拦截所有弹窗，防止显示错误信息 (可选)
+- (void)showAlertWithMessage:(id)message {
+    %log;
+    // 不显示任何弹窗
+    return;
+}
 
-    // 编译正则表达式（只执行一次）
-    static NSRegularExpression *regex = nil;
-    static dispatch_once_t regexToken;
-    dispatch_once(&regexToken, ^{
-        regex = [NSRegularExpression regularExpressionWithPattern:kURLPattern
-                                                          options:0
-                                                            error:nil];
-    });
-
-    // 判断当前请求是否匹配目标 URL
-    BOOL shouldModify = NO;
-    NSString *urlString = request.URL.absoluteString;
-    if (regex && urlString.length > 0) {
-        NSUInteger matches = [regex numberOfMatchesInString:urlString
-                                                     options:0
-                                                       range:NSMakeRange(0, urlString.length)];
-        shouldModify = (matches > 0);
-    }
-
-    if (shouldModify) {
-        // 包装原始 completionHandler，拦截并修改响应数据
-        return %orig(request, ^(NSData *data, NSURLResponse *response, NSError *error) {
-            NSData *modifiedData = data;  // 默认使用原始数据
-
-            if (data && !error) {
-                NSError *jsonError = nil;
-                // 使用 MutableContainers 以便直接修改内部字典/数组
-                id jsonObj = [NSJSONSerialization JSONObjectWithData:data
-                                                             options:NSJSONReadingMutableContainers
-                                                               error:&jsonError];
-                if (!jsonError && jsonObj) {
-                    // 递归删除广告字段
-                    removeAdFieldsFromJSON(jsonObj);
-
-                    // 重新序列化为 NSData
-                    modifiedData = [NSJSONSerialization dataWithJSONObject:jsonObj
-                                                                    options:0
-                                                                      error:nil];
-                    // 如果序列化失败，回退到原始数据
-                    if (!modifiedData) {
-                        modifiedData = data;
-                    }
-                }
-            }
-
-            // 调用原始的 completionHandler
-            if (completionHandler) {
-                completionHandler(modifiedData, response, error);
-            }
-        });
-    } else {
-        // 不匹配的 URL，直接传递原始 completionHandler
-        return %orig(request, completionHandler);
-    }
+- (void)showAlertWithTitle:(id)title message:(id)message {
+    %log;
+    // 不显示任何弹窗
+    return;
 }
 
 %end
+
+
+// ==================== 方案二：如果登录验证有单独的返回值方法 ====================
+// 假设存在一个类似 - (BOOL)validateLogin 的方法 (通过 class-dump 或逆向分析得到)
+/*
+%hook ZSLoginView
+- (BOOL)validateLogin {
+    %log;
+    // 直接返回 YES，表示验证通过
+    return YES;
+}
+%end
+*/
+
+
+// ==================== 方案三：自动填充任意注册码，并触发登录 ====================
+/*
+%hook ZSLoginView
+
+// 在视图出现时自动填充并触发登录
+- (void)viewDidAppear:(BOOL)animated {
+    %orig; // 先执行原始方法
+    
+    // 延迟0.5秒执行，确保界面完全加载
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), 
+                   dispatch_get_main_queue(), ^{
+        // 自动填充任意注册码 (比如 "123456")
+        self.zhucema.text = @"123456";
+        
+        // 模拟点击登录按钮
+        [self button_Login];
+    });
+}
+
+%end
+*/
