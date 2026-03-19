@@ -1,9 +1,9 @@
-Package: com.danlan.eric
-Name: blued
+Package: com.eric.ioszhushou
+Name: ioszhushou
 Depends: mobilesubstrate (>= 0.9.5000)
 Version: 1.0.0
 Architecture: iphoneos-arm
-Description: 测试
+Description: 绕过登录
 Maintainer: Mr.Eric
 Author: Mr.Eric
 Section: Tweaks
