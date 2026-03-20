@@ -6,7 +6,28 @@
 - (id)init {
     self = %orig;
     if (self) {
-        [self _setupZeroCell];
+        // 禁用自动布局转换，使 frame 修改生效
+        [(UIView *)self setTranslatesAutoresizingMaskIntoConstraints:NO];
+        // 移除所有已有约束
+        for (NSLayoutConstraint *constraint in [(UIView *)self constraints]) {
+            [(UIView *)self removeConstraint:constraint];
+        }
+        // 强制几何属性归零
+        [self setFrame:CGRectZero];
+        [self setBounds:CGRectZero];
+        [self setCenter:CGPointZero];
+        [self setHidden:YES];
+        // 处理 contentView
+        if ([self respondsToSelector:@selector(contentView)]) {
+            UIView *contentView = [self performSelector:@selector(contentView)];
+            contentView.translatesAutoresizingMaskIntoConstraints = NO;
+            for (NSLayoutConstraint *c in contentView.constraints) {
+                [contentView removeConstraint:c];
+            }
+            contentView.frame = CGRectZero;
+            contentView.bounds = CGRectZero;
+            [contentView setHidden:YES];
+        }
     }
     return self;
 }
@@ -14,40 +35,28 @@
 - (id)initWithCoder:(NSCoder *)coder {
     self = %orig;
     if (self) {
-        [self _setupZeroCell];
+        [(UIView *)self setTranslatesAutoresizingMaskIntoConstraints:NO];
+        for (NSLayoutConstraint *constraint in [(UIView *)self constraints]) {
+            [(UIView *)self removeConstraint:constraint];
+        }
+        [self setFrame:CGRectZero];
+        [self setBounds:CGRectZero];
+        [self setCenter:CGPointZero];
+        [self setHidden:YES];
+        if ([self respondsToSelector:@selector(contentView)]) {
+            UIView *contentView = [self performSelector:@selector(contentView)];
+            contentView.translatesAutoresizingMaskIntoConstraints = NO;
+            for (NSLayoutConstraint *c in contentView.constraints) {
+                [contentView removeConstraint:c];
+            }
+            contentView.frame = CGRectZero;
+            contentView.bounds = CGRectZero;
+            [contentView setHidden:YES];
+        }
     }
     return self;
 }
 
-- (void)_setupZeroCell {
-    // 禁用自动布局转换，使 frame 修改生效
-    [(UIView *)self setTranslatesAutoresizingMaskIntoConstraints:NO];
-    
-    // 移除所有已有约束
-    for (NSLayoutConstraint *constraint in [(UIView *)self constraints]) {
-        [(UIView *)self removeConstraint:constraint];
-    }
-    
-    // 强制几何属性归零
-    [self setFrame:CGRectZero];
-    [self setBounds:CGRectZero];
-    [self setCenter:CGPointZero];
-    [self setHidden:YES];
-    
-    // 处理 contentView
-    if ([self respondsToSelector:@selector(contentView)]) {
-        UIView *contentView = [self performSelector:@selector(contentView)];
-        contentView.translatesAutoresizingMaskIntoConstraints = NO;
-        for (NSLayoutConstraint *c in contentView.constraints) {
-            [contentView removeConstraint:c];
-        }
-        contentView.frame = CGRectZero;
-        contentView.bounds = CGRectZero;
-        [contentView setHidden:YES];
-    }
-}
-
-// 拦截几何属性的 setter
 - (void)setFrame:(CGRect)frame {
     frame = CGRectZero;
     %orig;
@@ -63,7 +72,6 @@
     %orig;
 }
 
-// 重写布局尺寸方法，返回零
 - (CGSize)intrinsicContentSize {
     return CGSizeZero;
 }
@@ -78,7 +86,6 @@
 
 - (void)layoutSubviews {
     %orig;
-    // 再次确保所有属性为零
     [self setFrame:CGRectZero];
     [self setBounds:CGRectZero];
     [self setCenter:CGPointZero];
@@ -99,7 +106,24 @@
 - (id)init {
     self = %orig;
     if (self) {
-        [self _setupZeroCell];
+        [(UIView *)self setTranslatesAutoresizingMaskIntoConstraints:NO];
+        for (NSLayoutConstraint *constraint in [(UIView *)self constraints]) {
+            [(UIView *)self removeConstraint:constraint];
+        }
+        [self setFrame:CGRectZero];
+        [self setBounds:CGRectZero];
+        [self setCenter:CGPointZero];
+        [self setHidden:YES];
+        if ([self respondsToSelector:@selector(contentView)]) {
+            UIView *contentView = [self performSelector:@selector(contentView)];
+            contentView.translatesAutoresizingMaskIntoConstraints = NO;
+            for (NSLayoutConstraint *c in contentView.constraints) {
+                [contentView removeConstraint:c];
+            }
+            contentView.frame = CGRectZero;
+            contentView.bounds = CGRectZero;
+            [contentView setHidden:YES];
+        }
     }
     return self;
 }
@@ -107,30 +131,26 @@
 - (id)initWithCoder:(NSCoder *)coder {
     self = %orig;
     if (self) {
-        [self _setupZeroCell];
+        [(UIView *)self setTranslatesAutoresizingMaskIntoConstraints:NO];
+        for (NSLayoutConstraint *constraint in [(UIView *)self constraints]) {
+            [(UIView *)self removeConstraint:constraint];
+        }
+        [self setFrame:CGRectZero];
+        [self setBounds:CGRectZero];
+        [self setCenter:CGPointZero];
+        [self setHidden:YES];
+        if ([self respondsToSelector:@selector(contentView)]) {
+            UIView *contentView = [self performSelector:@selector(contentView)];
+            contentView.translatesAutoresizingMaskIntoConstraints = NO;
+            for (NSLayoutConstraint *c in contentView.constraints) {
+                [contentView removeConstraint:c];
+            }
+            contentView.frame = CGRectZero;
+            contentView.bounds = CGRectZero;
+            [contentView setHidden:YES];
+        }
     }
     return self;
-}
-
-- (void)_setupZeroCell {
-    [(UIView *)self setTranslatesAutoresizingMaskIntoConstraints:NO];
-    for (NSLayoutConstraint *constraint in [(UIView *)self constraints]) {
-        [(UIView *)self removeConstraint:constraint];
-    }
-    [self setFrame:CGRectZero];
-    [self setBounds:CGRectZero];
-    [self setCenter:CGPointZero];
-    [self setHidden:YES];
-    if ([self respondsToSelector:@selector(contentView)]) {
-        UIView *contentView = [self performSelector:@selector(contentView)];
-        contentView.translatesAutoresizingMaskIntoConstraints = NO;
-        for (NSLayoutConstraint *c in contentView.constraints) {
-            [contentView removeConstraint:c];
-        }
-        contentView.frame = CGRectZero;
-        contentView.bounds = CGRectZero;
-        [contentView setHidden:YES];
-    }
 }
 
 - (void)setFrame:(CGRect)frame {
@@ -182,7 +202,24 @@
 - (id)init {
     self = %orig;
     if (self) {
-        [self _setupZeroCell];
+        [(UIView *)self setTranslatesAutoresizingMaskIntoConstraints:NO];
+        for (NSLayoutConstraint *constraint in [(UIView *)self constraints]) {
+            [(UIView *)self removeConstraint:constraint];
+        }
+        [self setFrame:CGRectZero];
+        [self setBounds:CGRectZero];
+        [self setCenter:CGPointZero];
+        [self setHidden:YES];
+        if ([self respondsToSelector:@selector(contentView)]) {
+            UIView *contentView = [self performSelector:@selector(contentView)];
+            contentView.translatesAutoresizingMaskIntoConstraints = NO;
+            for (NSLayoutConstraint *c in contentView.constraints) {
+                [contentView removeConstraint:c];
+            }
+            contentView.frame = CGRectZero;
+            contentView.bounds = CGRectZero;
+            [contentView setHidden:YES];
+        }
     }
     return self;
 }
@@ -190,30 +227,26 @@
 - (id)initWithCoder:(NSCoder *)coder {
     self = %orig;
     if (self) {
-        [self _setupZeroCell];
+        [(UIView *)self setTranslatesAutoresizingMaskIntoConstraints:NO];
+        for (NSLayoutConstraint *constraint in [(UIView *)self constraints]) {
+            [(UIView *)self removeConstraint:constraint];
+        }
+        [self setFrame:CGRectZero];
+        [self setBounds:CGRectZero];
+        [self setCenter:CGPointZero];
+        [self setHidden:YES];
+        if ([self respondsToSelector:@selector(contentView)]) {
+            UIView *contentView = [self performSelector:@selector(contentView)];
+            contentView.translatesAutoresizingMaskIntoConstraints = NO;
+            for (NSLayoutConstraint *c in contentView.constraints) {
+                [contentView removeConstraint:c];
+            }
+            contentView.frame = CGRectZero;
+            contentView.bounds = CGRectZero;
+            [contentView setHidden:YES];
+        }
     }
     return self;
-}
-
-- (void)_setupZeroCell {
-    [(UIView *)self setTranslatesAutoresizingMaskIntoConstraints:NO];
-    for (NSLayoutConstraint *constraint in [(UIView *)self constraints]) {
-        [(UIView *)self removeConstraint:constraint];
-    }
-    [self setFrame:CGRectZero];
-    [self setBounds:CGRectZero];
-    [self setCenter:CGPointZero];
-    [self setHidden:YES];
-    if ([self respondsToSelector:@selector(contentView)]) {
-        UIView *contentView = [self performSelector:@selector(contentView)];
-        contentView.translatesAutoresizingMaskIntoConstraints = NO;
-        for (NSLayoutConstraint *c in contentView.constraints) {
-            [contentView removeConstraint:c];
-        }
-        contentView.frame = CGRectZero;
-        contentView.bounds = CGRectZero;
-        [contentView setHidden:YES];
-    }
 }
 
 - (void)setFrame:(CGRect)frame {
@@ -265,7 +298,24 @@
 - (id)init {
     self = %orig;
     if (self) {
-        [self _setupZeroCell];
+        [(UIView *)self setTranslatesAutoresizingMaskIntoConstraints:NO];
+        for (NSLayoutConstraint *constraint in [(UIView *)self constraints]) {
+            [(UIView *)self removeConstraint:constraint];
+        }
+        [self setFrame:CGRectZero];
+        [self setBounds:CGRectZero];
+        [self setCenter:CGPointZero];
+        [self setHidden:YES];
+        if ([self respondsToSelector:@selector(contentView)]) {
+            UIView *contentView = [self performSelector:@selector(contentView)];
+            contentView.translatesAutoresizingMaskIntoConstraints = NO;
+            for (NSLayoutConstraint *c in contentView.constraints) {
+                [contentView removeConstraint:c];
+            }
+            contentView.frame = CGRectZero;
+            contentView.bounds = CGRectZero;
+            [contentView setHidden:YES];
+        }
     }
     return self;
 }
@@ -273,30 +323,26 @@
 - (id)initWithCoder:(NSCoder *)coder {
     self = %orig;
     if (self) {
-        [self _setupZeroCell];
+        [(UIView *)self setTranslatesAutoresizingMaskIntoConstraints:NO];
+        for (NSLayoutConstraint *constraint in [(UIView *)self constraints]) {
+            [(UIView *)self removeConstraint:constraint];
+        }
+        [self setFrame:CGRectZero];
+        [self setBounds:CGRectZero];
+        [self setCenter:CGPointZero];
+        [self setHidden:YES];
+        if ([self respondsToSelector:@selector(contentView)]) {
+            UIView *contentView = [self performSelector:@selector(contentView)];
+            contentView.translatesAutoresizingMaskIntoConstraints = NO;
+            for (NSLayoutConstraint *c in contentView.constraints) {
+                [contentView removeConstraint:c];
+            }
+            contentView.frame = CGRectZero;
+            contentView.bounds = CGRectZero;
+            [contentView setHidden:YES];
+        }
     }
     return self;
-}
-
-- (void)_setupZeroCell {
-    [(UIView *)self setTranslatesAutoresizingMaskIntoConstraints:NO];
-    for (NSLayoutConstraint *constraint in [(UIView *)self constraints]) {
-        [(UIView *)self removeConstraint:constraint];
-    }
-    [self setFrame:CGRectZero];
-    [self setBounds:CGRectZero];
-    [self setCenter:CGPointZero];
-    [self setHidden:YES];
-    if ([self respondsToSelector:@selector(contentView)]) {
-        UIView *contentView = [self performSelector:@selector(contentView)];
-        contentView.translatesAutoresizingMaskIntoConstraints = NO;
-        for (NSLayoutConstraint *c in contentView.constraints) {
-            [contentView removeConstraint:c];
-        }
-        contentView.frame = CGRectZero;
-        contentView.bounds = CGRectZero;
-        [contentView setHidden:YES];
-    }
 }
 
 - (void)setFrame:(CGRect)frame {
@@ -348,7 +394,24 @@
 - (id)init {
     self = %orig;
     if (self) {
-        [self _setupZeroCell];
+        [(UIView *)self setTranslatesAutoresizingMaskIntoConstraints:NO];
+        for (NSLayoutConstraint *constraint in [(UIView *)self constraints]) {
+            [(UIView *)self removeConstraint:constraint];
+        }
+        [self setFrame:CGRectZero];
+        [self setBounds:CGRectZero];
+        [self setCenter:CGPointZero];
+        [self setHidden:YES];
+        if ([self respondsToSelector:@selector(contentView)]) {
+            UIView *contentView = [self performSelector:@selector(contentView)];
+            contentView.translatesAutoresizingMaskIntoConstraints = NO;
+            for (NSLayoutConstraint *c in contentView.constraints) {
+                [contentView removeConstraint:c];
+            }
+            contentView.frame = CGRectZero;
+            contentView.bounds = CGRectZero;
+            [contentView setHidden:YES];
+        }
     }
     return self;
 }
@@ -356,30 +419,26 @@
 - (id)initWithCoder:(NSCoder *)coder {
     self = %orig;
     if (self) {
-        [self _setupZeroCell];
+        [(UIView *)self setTranslatesAutoresizingMaskIntoConstraints:NO];
+        for (NSLayoutConstraint *constraint in [(UIView *)self constraints]) {
+            [(UIView *)self removeConstraint:constraint];
+        }
+        [self setFrame:CGRectZero];
+        [self setBounds:CGRectZero];
+        [self setCenter:CGPointZero];
+        [self setHidden:YES];
+        if ([self respondsToSelector:@selector(contentView)]) {
+            UIView *contentView = [self performSelector:@selector(contentView)];
+            contentView.translatesAutoresizingMaskIntoConstraints = NO;
+            for (NSLayoutConstraint *c in contentView.constraints) {
+                [contentView removeConstraint:c];
+            }
+            contentView.frame = CGRectZero;
+            contentView.bounds = CGRectZero;
+            [contentView setHidden:YES];
+        }
     }
     return self;
-}
-
-- (void)_setupZeroCell {
-    [(UIView *)self setTranslatesAutoresizingMaskIntoConstraints:NO];
-    for (NSLayoutConstraint *constraint in [(UIView *)self constraints]) {
-        [(UIView *)self removeConstraint:constraint];
-    }
-    [self setFrame:CGRectZero];
-    [self setBounds:CGRectZero];
-    [self setCenter:CGPointZero];
-    [self setHidden:YES];
-    if ([self respondsToSelector:@selector(contentView)]) {
-        UIView *contentView = [self performSelector:@selector(contentView)];
-        contentView.translatesAutoresizingMaskIntoConstraints = NO;
-        for (NSLayoutConstraint *c in contentView.constraints) {
-            [contentView removeConstraint:c];
-        }
-        contentView.frame = CGRectZero;
-        contentView.bounds = CGRectZero;
-        [contentView setHidden:YES];
-    }
 }
 
 - (void)setFrame:(CGRect)frame {
