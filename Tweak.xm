@@ -2,14 +2,6 @@
 #import <UIKit/UIKit.h>
 #import <substrate.h>
 
-#pragma mark - 为 ZSLoginView 添加方法声明（解决编译错误）
-@class ZSLoginView; // 向前声明
-
-@interface ZSLoginView (Bypass)
-- (void)showAlertWithMessage:(NSString *)message;
-- (void)setStatus_res:(id)status;
-@end
-
 #pragma mark - 自定义 NSURLProtocol 拦截器
 @interface BypassURLProtocol : NSURLProtocol
 @end
@@ -64,7 +56,7 @@
 
 @end
 
-#pragma mark - 可选：直接绕过 ZSLoginView 的登录按钮
+#pragma mark - 直接绕过 ZSLoginView 的登录按钮
 static void (*orig_button_Login)(id self, SEL _cmd);
 static void new_button_Login(id self, SEL _cmd) {
     NSLog(@"[Bypass] button_Login 被调用，直接绕过验证");
