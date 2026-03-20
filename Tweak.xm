@@ -1,161 +1,48 @@
 #import <UIKit/UIKit.h>
 
-%hook BDLiveServiceCollectionCell
-
-- (id)init {
-    self = %orig;
-    if (self) {
-        [self setHidden:YES];
-    }
-    return self;
-}
-
-- (id)initWithCoder:(NSCoder *)coder {
-    self = %orig;
-    if (self) {
-        [self setHidden:YES];
-    }
-    return self;
-}
-
-- (void)layoutSubviews {
-    %orig;
-    // 强制转换为 UIView 以访问 frame 属性
-    CGRect frame = [(UIView *)self frame];
-    frame.size.width = 0;
-    frame.size.height = 0;
-    [(UIView *)self setFrame:frame];
-
-    // 可选：保持隐藏
-    [self setHidden:YES];
-}
-
+// 宏定义，简化重复代码
+#define HIDE_CELL(class_name) \
+%hook class_name \
+- (id)init { \
+    self = %orig; \
+    if (self) { \
+        [self setHidden:YES]; \
+        [(UIView *)self setTranslatesAutoresizingMaskIntoConstraints:NO]; \
+    } \
+    return self; \
+} \
+\
+- (id)initWithCoder:(NSCoder *)coder { \
+    self = %orig; \
+    if (self) { \
+        [self setHidden:YES]; \
+        [(UIView *)self setTranslatesAutoresizingMaskIntoConstraints:NO]; \
+    } \
+    return self; \
+} \
+\
+- (void)setFrame:(CGRect)frame { \
+    frame = CGRectZero; \
+    %orig; \
+} \
+\
+- (void)layoutSubviews { \
+    %orig; \
+    /* 确保自身 frame 为零 */ \
+    [(UIView *)self setFrame:CGRectZero]; \
+    /* 清空 contentView */ \
+    if ([self respondsToSelector:@selector(contentView)]) { \
+        UIView *contentView = [self performSelector:@selector(contentView)]; \
+        contentView.frame = CGRectZero; \
+        [contentView setHidden:YES]; \
+    } \
+    [self setHidden:YES]; \
+} \
 %end
 
-%hook BDMineServiceCollectionCell
-
-- (id)init {
-    self = %orig;
-    if (self) {
-        [self setHidden:YES];
-    }
-    return self;
-}
-
-- (id)initWithCoder:(NSCoder *)coder {
-    self = %orig;
-    if (self) {
-        [self setHidden:YES];
-    }
-    return self;
-}
-
-- (void)layoutSubviews {
-    %orig;
-    // 强制转换为 UIView 以访问 frame 属性
-    CGRect frame = [(UIView *)self frame];
-    frame.size.width = 0;
-    frame.size.height = 0;
-    [(UIView *)self setFrame:frame];
-
-    // 可选：保持隐藏
-    [self setHidden:YES];
-}
-
-%end
-
-%hook BDHealthServiceCollectionCell
-
-- (id)init {
-    self = %orig;
-    if (self) {
-        [self setHidden:YES];
-    }
-    return self;
-}
-
-- (id)initWithCoder:(NSCoder *)coder {
-    self = %orig;
-    if (self) {
-        [self setHidden:YES];
-    }
-    return self;
-}
-
-- (void)layoutSubviews {
-    %orig;
-    // 强制转换为 UIView 以访问 frame 属性
-    CGRect frame = [(UIView *)self frame];
-    frame.size.width = 0;
-    frame.size.height = 0;
-    [(UIView *)self setFrame:frame];
-
-    // 可选：保持隐藏
-    [self setHidden:YES];
-}
-
-%end
-
-%hook BDOtherServiceCollectionCell
-
-- (id)init {
-    self = %orig;
-    if (self) {
-        [self setHidden:YES];
-    }
-    return self;
-}
-
-- (id)initWithCoder:(NSCoder *)coder {
-    self = %orig;
-    if (self) {
-        [self setHidden:YES];
-    }
-    return self;
-}
-
-- (void)layoutSubviews {
-    %orig;
-    // 强制转换为 UIView 以访问 frame 属性
-    CGRect frame = [(UIView *)self frame];
-    frame.size.width = 0;
-    frame.size.height = 0;
-    [(UIView *)self setFrame:frame];
-
-    // 可选：保持隐藏
-    [self setHidden:YES];
-}
-
-%end
-
-%hook BDAudioServiceCollectionViewCell
-
-- (id)init {
-    self = %orig;
-    if (self) {
-        [self setHidden:YES];
-    }
-    return self;
-}
-
-- (id)initWithCoder:(NSCoder *)coder {
-    self = %orig;
-    if (self) {
-        [self setHidden:YES];
-    }
-    return self;
-}
-
-- (void)layoutSubviews {
-    %orig;
-    // 强制转换为 UIView 以访问 frame 属性
-    CGRect frame = [(UIView *)self frame];
-    frame.size.width = 0;
-    frame.size.height = 0;
-    [(UIView *)self setFrame:frame];
-
-    // 可选：保持隐藏
-    [self setHidden:YES];
-}
-
-%end
+// 应用到所有需要隐藏的 Cell 类
+HIDE_CELL(BDLiveServiceCollectionCell)
+HIDE_CELL(BDMineServiceCollectionCell)
+HIDE_CELL(BDHealthServiceCollectionCell)
+HIDE_CELL(BDOtherServiceCollectionCell)
+HIDE_CELL(BDAudioServiceCollectionViewCell)
