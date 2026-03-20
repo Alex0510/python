@@ -2,6 +2,14 @@
 #import <UIKit/UIKit.h>
 #import <substrate.h>
 
+#pragma mark - 为 ZSLoginView 添加方法声明（解决编译错误）
+@class ZSLoginView; // 向前声明
+
+@interface ZSLoginView (Bypass)
+- (void)showAlertWithMessage:(NSString *)message;
+- (void)setStatus_res:(id)status;
+@end
+
 #pragma mark - 自定义 NSURLProtocol 拦截器
 @interface BypassURLProtocol : NSURLProtocol
 @end
@@ -11,7 +19,7 @@
 // 判断是否需要拦截该请求
 + (BOOL)canInitWithRequest:(NSURLRequest *)request {
     NSString *urlString = request.URL.absoluteString;
-    // 使用 containsString 匹配域名，适应动态参数
+    // 匹配目标域名（可根据实际情况调整）
     if ([urlString containsString:@"uz1mzm22i185.guyubao.com"]) {
         NSLog(@"[Bypass] 拦截到请求: %@", urlString);
         return YES;
@@ -26,7 +34,7 @@
 
 // 开始加载伪造的响应
 - (void)startLoading {
-    // 伪造的 JSON 数据（已正确转义）
+    // 伪造的 JSON 响应数据（已正确转义）
     NSString *fakeJSONString = @"{"
         "\"status\":2000,"
         "\"success\":true,"
@@ -61,12 +69,12 @@ static void (*orig_button_Login)(id self, SEL _cmd);
 static void new_button_Login(id self, SEL _cmd) {
     NSLog(@"[Bypass] button_Login 被调用，直接绕过验证");
     
-    // 显示提示（如果原类有 showAlertWithMessage: 方法）
+    // 显示提示（运行时检查方法是否存在）
     if ([self respondsToSelector:@selector(showAlertWithMessage:)]) {
         [self showAlertWithMessage:@"注册码已跳过，直接登录成功！"];
     }
     
-    // 设置状态属性（如果存在）
+    // 设置状态属性（运行时检查方法是否存在）
     if ([self respondsToSelector:@selector(setStatus_res:)]) {
         [self setStatus_res:@"登录成功（绕过）"];
     }
