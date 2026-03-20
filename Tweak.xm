@@ -1,6 +1,13 @@
 #import <UIKit/UIKit.h>
 
-// 宏定义，简化重复代码
+// 前向声明，避免未知类型错误
+@class BDLiveServiceCollectionCell;
+@class BDMineServiceCollectionCell;
+@class BDHealthServiceCollectionCell;
+@class BDOtherServiceCollectionCell;
+@class BDAudioServiceCollectionViewCell;
+
+// 宏定义，统一处理隐藏与尺寸归零
 #define HIDE_CELL(class_name) \
 %hook class_name \
 - (id)init { \
@@ -28,9 +35,9 @@
 \
 - (void)layoutSubviews { \
     %orig; \
-    /* 确保自身 frame 为零 */ \
+    /* 强制自身 frame 为零 */ \
     [(UIView *)self setFrame:CGRectZero]; \
-    /* 清空 contentView */ \
+    /* 清空 contentView，彻底消除子视图占位 */ \
     if ([self respondsToSelector:@selector(contentView)]) { \
         UIView *contentView = [self performSelector:@selector(contentView)]; \
         contentView.frame = CGRectZero; \
@@ -40,7 +47,7 @@
 } \
 %end
 
-// 应用到所有需要隐藏的 Cell 类
+// 应用到目标 Cell 类
 HIDE_CELL(BDLiveServiceCollectionCell)
 HIDE_CELL(BDMineServiceCollectionCell)
 HIDE_CELL(BDHealthServiceCollectionCell)
