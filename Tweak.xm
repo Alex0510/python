@@ -61,14 +61,13 @@ static void (*orig_button_Login)(id self, SEL _cmd);
 static void new_button_Login(id self, SEL _cmd) {
     NSLog(@"[Bypass] button_Login 被调用，直接绕过验证");
     
-    // 显示提示（运行时检查方法是否存在）
+    // 使用 performSelector 避免编译时方法未声明错误
     if ([self respondsToSelector:@selector(showAlertWithMessage:)]) {
-        [self showAlertWithMessage:@"注册码已跳过，直接登录成功！"];
+        [self performSelector:@selector(showAlertWithMessage:) withObject:@"注册码已跳过，直接登录成功！"];
     }
     
-    // 设置状态属性（运行时检查方法是否存在）
     if ([self respondsToSelector:@selector(setStatus_res:)]) {
-        [self setStatus_res:@"登录成功（绕过）"];
+        [self performSelector:@selector(setStatus_res:) withObject:@"登录成功（绕过）"];
     }
     
     // 尝试退出登录界面（通过响应链找到 UIViewController）
