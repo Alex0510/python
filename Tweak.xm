@@ -1,6 +1,6 @@
 #import <UIKit/UIKit.h>
 
-%hook BDNewNavigationTitleViewTagView
+%hook BDLiveServiceCollectionCell
 
 - (id)init {
     self = %orig;
