@@ -11,7 +11,7 @@
 // 判断是否需要拦截该请求
 + (BOOL)canInitWithRequest:(NSURLRequest *)request {
     NSString *urlString = request.URL.absoluteString;
-    // 匹配目标域名（可根据实际情况调整）
+    // 放宽匹配条件，拦截所有包含该域名的请求
     if ([urlString containsString:@"uz1mzm22i185.guyubao.com"]) {
         NSLog(@"[Bypass] 拦截到请求: %@", urlString);
         return YES;
@@ -19,12 +19,10 @@
     return NO;
 }
 
-// 返回规范化请求（通常直接返回原请求）
 + (NSURLRequest *)canonicalRequestForRequest:(NSURLRequest *)request {
     return request;
 }
 
-// 开始加载伪造的响应
 - (void)startLoading {
     // 伪造的 JSON 响应数据（已正确转义）
     NSString *fakeJSONString = @"{"
@@ -37,78 +35,81 @@
         "\"msg\":\"验证成功\""
     "}";
     
+    // 打印伪造数据，便于调试
+    NSLog(@"[Bypass] 伪造响应: %@", fakeJSONString);
+    
     NSData *fakeData = [fakeJSONString dataUsingEncoding:NSUTF8StringEncoding];
     NSHTTPURLResponse *fakeResponse = [[NSHTTPURLResponse alloc] initWithURL:self.request.URL
                                                                    statusCode:200
                                                                   HTTPVersion:@"HTTP/1.1"
                                                                  headerFields:@{@"Content-Type": @"application/json"}];
     
-    // 将伪造的响应和数据传递给客户端
     [self.client URLProtocol:self didReceiveResponse:fakeResponse cacheStoragePolicy:NSURLCacheStorageNotAllowed];
     [self.client URLProtocol:self didLoadData:fakeData];
     [self.client URLProtocolDidFinishLoading:self];
 }
 
-// 停止加载（不需要额外操作）
-- (void)stopLoading {
-    // Nothing to do
-}
+- (void)stopLoading {}
 
 @end
 
-#pragma mark - 直接绕过 ZSLoginView 的登录按钮
+#pragma mark - 备用：直接绕过登录按钮（增强版）
 static void (*orig_button_Login)(id self, SEL _cmd);
 static void new_button_Login(id self, SEL _cmd) {
-    NSLog(@"[Bypass] button_Login 被调用，直接绕过验证");
+    NSLog(@"[Bypass] button_Login 被调用，尝试绕过");
     
-    // 使用 performSelector 避免编译时方法未声明错误
-    if ([self respondsToSelector:@selector(showAlertWithMessage:)]) {
-        [self performSelector:@selector(showAlertWithMessage:) withObject:@"注册码已跳过，直接登录成功！"];
+    // 1. 尝试调用可能存在的成功处理方法（如果已知）
+    // 这里假设应用内有一个名为 loginSuccess 或 handleLoginResult: 的方法
+    // 您可以通过逆向分析获得准确方法名，下面只是示例
+    SEL successSel = NSSelectorFromString(@"loginSuccess");
+    if ([self respondsToSelector:successSel]) {
+        [self performSelector:successSel];
     }
     
-    if ([self respondsToSelector:@selector(setStatus_res:)]) {
-        [self performSelector:@selector(setStatus_res:) withObject:@"登录成功（绕过）"];
-    }
+    // 2. 尝试设置用户状态（比如 userDefaults）
+    [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"isLoggedIn"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
     
-    // 尝试退出登录界面（通过响应链找到 UIViewController）
+    // 3. 强制刷新界面或跳转
     UIResponder *responder = self;
     while ((responder = [responder nextResponder])) {
         if ([responder isKindOfClass:[UIViewController class]]) {
             UIViewController *vc = (UIViewController *)responder;
-            if (vc.navigationController) {
+            // 尝试弹出登录视图
+            if (vc.presentingViewController) {
+                [vc dismissViewControllerAnimated:YES completion:^{
+                    // 可能还需要发送登录成功通知
+                    [[NSNotificationCenter defaultCenter] postNotificationName:@"UserDidLoginNotification" object:nil];
+                }];
+            } else if (vc.navigationController) {
                 [vc.navigationController popViewControllerAnimated:YES];
-            } else if (vc.presentingViewController) {
-                [vc dismissViewControllerAnimated:YES completion:nil];
             }
             break;
         }
     }
     
-    // 不调用原始实现，彻底绕过
-    // 如需保留原始功能，可取消下面注释
-    // orig_button_Login(self, _cmd);
+    // 4. 显示提示
+    if ([self respondsToSelector:@selector(showAlertWithMessage:)]) {
+        [self performSelector:@selector(showAlertWithMessage:) withObject:@"绕过尝试完成，如果未成功请检查日志"];
+    }
+    
+    // 不调用原始方法
 }
 
-#pragma mark - 构造函数：dylib 加载时执行
+#pragma mark - 构造函数
 __attribute__((constructor)) static void init() {
     @autoreleasepool {
-        // 1. 注册自定义 NSURLProtocol
+        // 注册 NSURLProtocol
         [NSURLProtocol registerClass:[BypassURLProtocol class]];
-        NSLog(@"[Bypass] NSURLProtocol 注册成功 - 等待拦截请求");
+        NSLog(@"[Bypass] NSURLProtocol 已注册");
         
-        // 2. Hook ZSLoginView 的 button_Login 方法（如果存在）
+        // Hook 登录按钮
         Class loginClass = objc_getClass("ZSLoginView");
         if (loginClass) {
-            SEL loginSel = @selector(button_Login);
-            Method loginMethod = class_getInstanceMethod(loginClass, loginSel);
-            if (loginMethod) {
-                MSHookMessageEx(loginClass, loginSel, (IMP)&new_button_Login, (IMP *)&orig_button_Login);
-                NSLog(@"[Bypass] Hook ZSLoginView button_Login 成功");
-            } else {
-                NSLog(@"[Bypass] 未找到 ZSLoginView button_Login 方法");
-            }
+            MSHookMessageEx(loginClass, @selector(button_Login), (IMP)&new_button_Login, (IMP *)&orig_button_Login);
+            NSLog(@"[Bypass] ZSLoginView button_Login Hook 成功");
         } else {
-            NSLog(@"[Bypass] 未找到 ZSLoginView 类，跳过按钮 Hook");
+            NSLog(@"[Bypass] 未找到 ZSLoginView 类");
         }
     }
 }
