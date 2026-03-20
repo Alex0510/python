@@ -5,7 +5,7 @@
 - (id)init {
     self = %orig;
     if (self) {
-        [self setHidden:YES];   // 初始隐藏（可选）
+        [self setHidden:YES];
     }
     return self;
 }
@@ -13,20 +13,20 @@
 - (id)initWithCoder:(NSCoder *)coder {
     self = %orig;
     if (self) {
-        [self setHidden:YES];   // 初始隐藏（可选）
+        [self setHidden:YES];
     }
     return self;
 }
 
 - (void)layoutSubviews {
     %orig;
-    // 强制设置宽度和高度为 0
-    CGRect frame = self.frame;
+    // 强制转换为 UIView 以访问 frame 属性
+    CGRect frame = [(UIView *)self frame];
     frame.size.width = 0;
     frame.size.height = 0;
-    self.frame = frame;
+    [(UIView *)self setFrame:frame];
 
-    // 可选：继续隐藏（若同时需要隐藏，可保留）
+    // 可选：保持隐藏
     [self setHidden:YES];
 }
 
