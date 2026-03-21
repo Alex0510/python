@@ -1,14 +1,9 @@
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
-#include <objc/runtime.h>
 
-// 目标应用中的类声明（仅用于编译）
 @interface PaymentManager : NSObject
 @property (nonatomic, assign) BOOL isVip;
 - (BOOL)checkVipFromKeyChain;
-- (void)verifyPurchaseWithCompletion:(void (^)(BOOL success))completion;
-- (void)saveVipStatusWithIsVip:(BOOL)isVip;
-- (void)saveCurrentTimestamp;
 - (id)getDataFromKeychainWithKey:(id)key;
 - (id)keyForVip;
 @end
@@ -31,18 +26,6 @@
 
 - (BOOL)checkVipFromKeyChain {
     return YES;
-}
-
-- (void)verifyPurchaseWithCompletion:(void (^)(BOOL success))completion {
-    if (completion) completion(YES);
-}
-
-- (void)saveVipStatusWithIsVip:(BOOL)isVip {
-    %orig(YES);
-}
-
-- (void)saveCurrentTimestamp {
-    // 不做任何事，防止过期
 }
 
 - (id)getDataFromKeychainWithKey:(id)key {
