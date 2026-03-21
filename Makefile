@@ -10,5 +10,6 @@ TWEAK_NAME = picsewPro
 picsewPro_FILES = Tweak.xm
 picsewPro_CFLAGS = -fobjc-arc
 picsewPro_FRAMEWORKS = StoreKit
+picsewPro_FRAMEWORKS = StoreKit Foundation UIKit
 
 include $(THEOS_MAKE_PATH)/tweak.mk
