@@ -6,7 +6,7 @@
     <dict>
         <key>Bundles</key>
         <array>
-            <string>com.danlan.xiaolan</string>
+            <string>com.xiaoming.calculator</string>
         </array>
     </dict>
 </dict>
