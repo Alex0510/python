@@ -1,173 +1,84 @@
 #import <UIKit/UIKit.h>
-#import <StoreKit/StoreKit.h>
+#import <Foundation/Foundation.h>
+#include <objc/runtime.h>
 
-#pragma mark - 类接口声明（基于提供的头文件）
-
-@interface BuyVipView : UIView
-@property (nonatomic, strong) UIView *bgView;
-@property (nonatomic, strong) UIView *vipView;
-@property (nonatomic, strong) UITableView *tableView;
-@property (nonatomic, strong) id modelData;
-@property (nonatomic, strong) NSArray *dataArray;
-@property (nonatomic, assign) long long selectIndex;
-@property (nonatomic, strong) NSString *orderID;
-@property (nonatomic, strong) NSString *VIPID;
-
-- (void)closePress;
-- (void)initTitleView;
-- (void)showViewWithWindow:(id)window;
-- (void)reloadLocalData;
-- (void)reloadFooterView;
-- (UIView *)tableView:(UITableView *)tableView viewForFooterInSection:(NSInteger)section;
-- (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section;
-- (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section;
-- (CGFloat)tableView:(UITableView *)tableView heightForFooterInSection:(NSInteger)section;
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView;
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section;
-- (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath;
-- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath;
-- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath;
-- (void)restorePress;
-- (void)paymentQueue:(SKPaymentQueue *)queue restoreCompletedTransactionsFailedWithError:(NSError *)error;
-- (void)paymentQueueRestoreCompletedTransactionsFinished:(SKPaymentQueue *)queue;
-- (void)upadteVipWithID:(NSString *)vipID;
-- (void)restoreFail;
-- (void)restoreSuccess;
-- (void)surePress;
-- (void)buyWithProductID:(NSString *)productID;
-- (void)productsRequest:(SKProductsRequest *)request didReceiveResponse:(SKProductsResponse *)response;
-- (void)request:(SKRequest *)request didFailWithError:(NSError *)error;
-- (void)requestDidFinish:(SKRequest *)request;
-- (void)paymentQueue:(SKPaymentQueue *)queue updatedTransactions:(NSArray<SKPaymentTransaction *> *)transactions;
-- (void)failedTransaction:(SKPaymentTransaction *)transaction;
-- (void)completeTransaction:(SKPaymentTransaction *)transaction;
-- (void)PostToAppleRecipt:(NSString *)recipt OrderID:(NSString *)orderID TransactionID:(NSString *)transactionID;
-- (void)clearBuyData;
-- (void)retryBuyData;
-- (void)showAlertWithTitle:(NSString *)title;
-- (UIViewController *)getAllRootViewController;
-- (void)showHudInView:(UIView *)view;
-- (void)showHudInView:(UIView *)view withTitle:(NSString *)title;
-- (void)showErrorWithTitle:(NSString *)title View:(UIView *)view;
-- (void)showNetErrorWithView:(UIView *)view Error:(NSError *)error;
-- (void)hideProHud:(UIView *)hud;
-- (UIImage *)createBtImageWithColor:(UIColor *)color;
+// 目标应用中的类声明（仅用于编译，实际运行时存在）
+@interface PaymentManager : NSObject
+@property (nonatomic, assign) BOOL isVip;
+- (BOOL)checkVipFromKeyChain;
+- (void)verifyPurchaseWithCompletion:(void (^)(BOOL success))completion;
+- (void)saveVipStatusWithIsVip:(BOOL)isVip;
+- (void)saveCurrentTimestamp;
+- (id)getDataFromKeychainWithKey:(id)key;
 @end
 
-@interface VIPViewController : UIViewController
-@property (nonatomic, strong) UITableView *tableView;
-@property (nonatomic, strong) UIBarButtonItem *rightBarItem;
-@property (nonatomic, strong) id modelData;
-@property (nonatomic, strong) NSArray *dataArray;
-@property (nonatomic, assign) long long selectIndex;
-@property (nonatomic, strong) NSString *orderID;
-@property (nonatomic, strong) NSString *VIPID;
-
-- (void)leftPress;
-- (void)viewWillAppear:(BOOL)animated;
+@interface VIPController : UIViewController
+@property (nonatomic, assign) BOOL isVip;
 - (void)viewDidLoad;
-- (void)reloadLocalData;
-- (void)reloadFooterView;
-- (UIView *)tableView:(UITableView *)tableView viewForFooterInSection:(NSInteger)section;
-- (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section;
-- (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section;
-- (CGFloat)tableView:(UITableView *)tableView heightForFooterInSection:(NSInteger)section;
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView;
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section;
-- (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath;
-- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath;
-- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath;
-- (void)restorePress;
-- (void)paymentQueue:(SKPaymentQueue *)queue restoreCompletedTransactionsFailedWithError:(NSError *)error;
-- (void)paymentQueueRestoreCompletedTransactionsFinished:(SKPaymentQueue *)queue;
-- (void)upadteVipWithID:(NSString *)vipID;
-- (void)restoreFail;
-- (void)restoreSuccess;
-- (void)surePress;
-- (void)buyWithProductID:(NSString *)productID;
-- (void)productsRequest:(SKProductsRequest *)request didReceiveResponse:(SKProductsResponse *)response;
-- (void)request:(SKRequest *)request didFailWithError:(NSError *)error;
-- (void)requestDidFinish:(SKRequest *)request;
-- (void)paymentQueue:(SKPaymentQueue *)queue updatedTransactions:(NSArray<SKPaymentTransaction *> *)transactions;
-- (void)failedTransaction:(SKPaymentTransaction *)transaction;
-- (void)completeTransaction:(SKPaymentTransaction *)transaction;
-- (void)PostToAppleRecipt:(NSString *)recipt OrderID:(NSString *)orderID TransactionID:(NSString *)transactionID;
-- (void)clearBuyData;
-- (void)retryBuyData;
+- (void)applyTheme;
 @end
 
-#pragma mark - Logos Hooks
-
-%hook VIPViewController
-
-- (void)viewDidLoad {
-    %orig;
-    // 强制设置VIP为有效状态
-    self.selectIndex = 0; // 假设0表示已选中的VIP等级
-    [self upadteVipWithID:@"com.xiaoming.calculator.vip"]; // 替换为实际VIP标识
-    [self reloadLocalData]; // 刷新界面数据
+// 确保初始化时即生效
+%ctor {
+    NSLog(@"ProUnlocker loaded: Unlocking VIP features...");
 }
 
-- (void)viewWillAppear:(BOOL)animated {
-    %orig;
-    // 每次出现时确保VIP状态有效
-    self.selectIndex = 0;
-    [self upadteVipWithID:@"com.xiaoming.calculator.vip"];
-    [self reloadLocalData];
+// Hook PaymentManager，始终返回 VIP 状态为 YES
+%hook PaymentManager
+
+- (BOOL)isVip {
+    return YES;
 }
 
-%end
-
-%hook BuyVipView
-
-- (void)showViewWithWindow:(id)window {
-    // 直接模拟购买成功，不显示购买界面
-    [self surePress];
-    // 不调用原始方法，避免显示窗口
-    // %orig;
+- (BOOL)checkVipFromKeyChain {
+    return YES;
 }
 
-- (void)surePress {
-    // 模拟购买成功流程
-    [self completeTransaction:nil];
-    [self upadteVipWithID:@"com.xiaoming.calculator.vip"];
-    [self hideProHud:nil];
-    [self showAlertWithTitle:@"VIP已激活"];
-}
-
-- (void)buyWithProductID:(id)productID {
-    // 直接完成交易，不发起真实支付
-    [self completeTransaction:productID];
-}
-
-- (void)completeTransaction:(id)transaction {
-    // 跳过收据验证，直接更新VIP状态
-    [self upadteVipWithID:@"com.xiaoming.calculator.vip"];
-    // 如果有服务器验证，需模拟成功响应
-}
-
-- (void)restorePress {
-    // 模拟恢复购买成功
-    [self restoreSuccess];
-}
-
-- (void)paymentQueue:(SKPaymentQueue *)queue updatedTransactions:(NSArray<SKPaymentTransaction *> *)transactions {
-    // 将所有交易标记为已购买，避免弹出Apple ID验证
-    for (SKPaymentTransaction *transaction in transactions) {
-        if (transaction.transactionState == SKPaymentTransactionStatePurchasing) {
-            // 模拟完成交易
-            [self completeTransaction:transaction];
-            [queue finishTransaction:transaction];
-        } else if (transaction.transactionState == SKPaymentTransactionStateFailed) {
-            // 将失败也转为成功
-            [self completeTransaction:transaction];
-            [queue finishTransaction:transaction];
-        } else {
-            // 其他状态直接完成
-            [self completeTransaction:transaction];
-            [queue finishTransaction:transaction];
-        }
+// 拦截购买验证，直接返回成功（可选）
+- (void)verifyPurchaseWithCompletion:(void (^)(BOOL success))completion {
+    if (completion) {
+        completion(YES);
     }
 }
 
+// 拦截保存 VIP 状态，防止被覆盖
+- (void)saveVipStatusWithIsVip:(BOOL)isVip {
+    // 忽略传入的 isVip，始终保存为 YES
+    %orig(YES);
+}
+
+// 防止过期时间检查（如果有类似机制）
+- (void)saveCurrentTimestamp {
+    // 不做任何事或保存一个很大的值
+    // %orig; // 如果不调用原方法，则不会更新过期时间
+}
+
+- (id)getDataFromKeychainWithKey:(id)key {
+    id result = %orig;
+    // 如果读取的是 VIP 相关键值，返回有效数据
+    if ([key isEqualToString:@"vip_key"] || [key isEqualToString:[self keyForVip]]) {
+        return @(YES);
+    }
+    return result;
+}
+
 %end
+
+// Hook VIPController，确保界面上的 VIP 状态显示为已解锁
+%hook VIPController
+
+- (BOOL)isVip {
+    return YES;
+}
+
+- (void)viewDidLoad {
+    %orig;
+    // 强制设置为 VIP 状态，并更新界面
+    self.isVip = YES;
+    // 可能还需要刷新界面元素，比如 VIP 标签、购买按钮等
+    [self applyTheme]; // 假设这个方法会根据 VIP 状态更新界面
+}
+
+%end
+
+// 可选：如果应用中其他地方直接访问了 PaymentManager 的单例或实例，也可以通过额外 Hook 确保所有相关方法均返回 VIP 状态
