@@ -1,9 +1,9 @@
-Package: com.eric.ioszhushou
-Name: ioszhushou
+Package: com.eric.calculator
+Name: xiaoming
 Depends: mobilesubstrate (>= 0.9.5000)
 Version: 1.0.0
 Architecture: iphoneos-arm
-Description: 绕过登录
+Description: vip
 Maintainer: Mr.Eric
 Author: Mr.Eric
 Section: Tweaks
