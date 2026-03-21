@@ -6,7 +6,7 @@
     <dict>
         <key>Bundles</key>
         <array>
-            <string>com.qingbin.Addons</string>
+            <string>com.sugarmo.ScrollClip</string>
         </array>
     </dict>
 </dict>
