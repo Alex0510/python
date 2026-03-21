@@ -1,0 +1,97 @@
+name: Build DEB with Theos
+
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # 其他安装步骤保持不变 ...
+
+      # --- 新增：提取包名 ---
+      - name: 从 plist 提取包名
+        id: extract_package_name
+        run: |
+          # 请根据你的实际 plist 文件名修改
+          PLIST_FILE="VIPUnlocker.plist"
+          DEFAULT_NAME="PythonHook"
+
+          if [ ! -f "$PLIST_FILE" ]; then
+            echo "未找到 $PLIST_FILE，使用默认包名 $DEFAULT_NAME"
+            echo "PACKAGE_NAME=$DEFAULT_NAME" >> $GITHUB_ENV
+            exit 0
+          fi
+
+          # 使用 Python 解析 plist，读取 CFBundleIdentifier
+          PACKAGE_NAME=$(python3 -c "import plistlib; print(plistlib.load(open('$PLIST_FILE', 'rb')).get('CFBundleIdentifier', '$DEFAULT_NAME'))")
+          echo "提取到的包名: $PACKAGE_NAME"
+          echo "PACKAGE_NAME=$PACKAGE_NAME" >> $GITHUB_ENV
+
+      # 构建、提取版本号等步骤保持不变 ...
+
+      - name: 构建 .deb 包
+        run: |
+          make clean || true
+          make package TARGET=iphone:clang:latest LD=/usr/bin/ld.lld LDFLAGS="-fuse-ld=lld" ARCHS=arm64
+          find . -name "*.deb" -exec mv {} output/ \;
+
+      - name: 提取版本号
+        id: version
+        run: |
+          # 你的版本提取逻辑不变 ...
+          # 假设最终得到 VERSION 环境变量
+
+      - name: 重命名 .deb 文件
+        run: |
+          cd output
+          DEB_FILE=$(find . -maxdepth 1 -name "*.deb" | head -1)
+          if [ -n "$DEB_FILE" ]; then
+            mv "$DEB_FILE" "${{ env.PACKAGE_NAME }}-${VERSION}.deb"
+            echo "已重命名为 ${{ env.PACKAGE_NAME }}-${VERSION}.deb"
+          else
+            echo "错误：未找到 .deb 文件"
+            exit 1
+          fi
+
+      - name: 打包源码
+        run: |
+          mkdir -p output
+          git archive --format=zip --output=output/${{ env.PACKAGE_NAME }}-source.zip HEAD
+          if [ ! -f "output/${{ env.PACKAGE_NAME }}-source.zip" ]; then
+            echo "错误：源码包生成失败！"
+            exit 1
+          fi
+
+      - name: 列出 output 目录内容（调试）
+        run: ls -la output/
+
+      - name: 上传到 Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            output/${{ env.PACKAGE_NAME }}-${{ env.VERSION }}.deb
+            output/${{ env.PACKAGE_NAME }}-source.zip
+          token: ${{ secrets.GITHUB_TOKEN }}
+          name: Release ${{ github.ref_name }}
+
+      - name: 上传 .deb 包到 Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PACKAGE_NAME }}-${{ env.VERSION }}.deb
+          path: output/${{ env.PACKAGE_NAME }}-${{ env.VERSION }}.deb
+          if-no-files-found: error
+
+      - name: 上传源码包到 Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PACKAGE_NAME }}-source.zip
+          path: output/${{ env.PACKAGE_NAME }}-source.zip
+          if-no-files-found: error
