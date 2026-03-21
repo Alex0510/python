@@ -1,9 +1,9 @@
-Package: com.eric.addons
-Name: AddonsPro
+Package: com.eric.scrollclip
+Name: picsew
 Depends: mobilesubstrate (>= 0.9.5000)
 Version: 1.0.0
 Architecture: iphoneos-arm
-Description: vip
+Description: Pro
 Maintainer: Mr.Eric
 Author: Mr.Eric
 Section: Tweaks
