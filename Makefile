@@ -1,7 +1,7 @@
 export ARCHS = arm64 arm64e
 export TARGET = iphone:clang:latest:15.0
 
-INSTALL_TARGET_PROCESSES = Picsew
+INSTALL_TARGET_PROCESSES = picsewPro
 
 include $(THEOS)/makefiles/common.mk
 
