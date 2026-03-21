@@ -81,54 +81,42 @@ jobs:
           echo "LD=/usr/bin/ld.lld" >> $GITHUB_ENV
           echo "LDFLAGS=-fuse-ld=lld" >> $GITHUB_ENV
 
-      # ---------- 智能提取包名和版本号 ----------
-      - name: 智能提取包名和版本号
-        id: extract_info
+      # ---------- 修复 Makefile 中的错误路径 ----------
+      - name: 修复 Makefile 中的 Theos 路径
         run: |
-          # 自动查找 .plist 文件
-          PLIST_FILES=$(find . -maxdepth 1 -name "*.plist" -type f)
-          PLIST_COUNT=$(echo "$PLIST_FILES" | wc -l)
-          PLIST_FILE=""
-          if [ $PLIST_COUNT -eq 1 ]; then
-            PLIST_FILE=$(echo "$PLIST_FILES" | head -1)
-            echo "找到 plist 文件: $PLIST_FILE"
-          elif [ $PLIST_COUNT -gt 1 ]; then
-            echo "错误：找到多个 plist 文件："
-            echo "$PLIST_FILES"
-            echo "请在仓库根目录只保留一个 .plist 文件，或在工作流中通过 PLIST_FILE 环境变量指定。"
-            exit 1
+          if [ -f "Makefile" ]; then
+            sed -i 's|^include /tweak\.mk|include $(THEOS)/makefiles/tweak.mk|' Makefile
+            sed -i 's|^include /common\.mk|include $(THEOS)/makefiles/common.mk|' Makefile
+            sed -i 's|^include /project\.mk|include $(THEOS)/makefiles/project.mk|' Makefile
+            echo "Makefile 路径修复完成"
           else
-            echo "未找到 plist 文件，将跳过 plist 读取。"
+            echo "警告：未找到 Makefile"
           fi
 
-          # 提取包名
+      # ---------- 从 Makefile 提取包名 (TWEAK_NAME) ----------
+      - name: 从 Makefile 提取包名
+        id: extract_package
+        run: |
           PACKAGE_NAME=""
-          if [ -n "$PLIST_FILE" ]; then
-            PACKAGE_NAME=$(python3 -c "import plistlib; d=plistlib.load(open('$PLIST_FILE', 'rb')); print(d.get('CFBundleIdentifier', ''))" 2>/dev/null || echo "")
-          fi
-
-          # 如果 plist 未提供，尝试从 control 文件读取
-          if [ -z "$PACKAGE_NAME" ]; then
-            CONTROL_FILE=""
-            if [ -f "control" ]; then
-              CONTROL_FILE="control"
-            elif [ -f "layout/DEBIAN/control" ]; then
-              CONTROL_FILE="layout/DEBIAN/control"
+          if [ -f "Makefile" ]; then
+            # 提取 TWEAK_NAME 的值（支持 = 和 :=，支持引号）
+            # 示例：TWEAK_NAME = MyTweak 或 TWEAK_NAME := "MyTweak"
+            RAW_NAME=$(grep -E '^TWEAK_NAME\s*[:=]\s*' Makefile | head -1 | sed -E 's/^TWEAK_NAME\s*[:=]\s*//; s/^"//; s/"$//; s/^'\''//; s/'\''$//')
+            if [ -n "$RAW_NAME" ]; then
+              PACKAGE_NAME="$RAW_NAME"
+              echo "从 Makefile 提取到包名: $PACKAGE_NAME"
+            else
+              echo "未在 Makefile 中找到 TWEAK_NAME 定义"
             fi
-            if [ -n "$CONTROL_FILE" ]; then
-              PACKAGE_NAME=$(grep "^Package:" "$CONTROL_FILE" | awk '{print $2}' | head -1)
-            fi
-          fi
-
-          # 如果都没有，使用仓库名作为包名
-          if [ -z "$PACKAGE_NAME" ]; then
-            PACKAGE_NAME="${GITHUB_REPOSITORY##*/}"
-            echo "未找到包名，使用仓库名: $PACKAGE_NAME"
           else
-            echo "提取到的包名: $PACKAGE_NAME"
+            echo "未找到 Makefile"
           fi
+          echo "PACKAGE_NAME=$PACKAGE_NAME" >> $GITHUB_OUTPUT
 
-          # 提取版本号
+      # ---------- 智能提取版本号 ----------
+      - name: 智能提取版本号
+        id: extract_version
+        run: |
           VERSION=""
           # 优先从 control 文件读取
           CONTROL_FILE=""
@@ -141,9 +129,14 @@ jobs:
             VERSION=$(grep "^Version:" "$CONTROL_FILE" | awk '{print $2}' | head -1)
           fi
 
-          # 如果 control 没有，尝试从 plist 读取
-          if [ -z "$VERSION" ] && [ -n "$PLIST_FILE" ]; then
-            VERSION=$(python3 -c "import plistlib; d=plistlib.load(open('$PLIST_FILE', 'rb')); print(d.get('CFBundleVersion', d.get('CFBundleShortVersionString', '')))" 2>/dev/null || echo "")
+          # 如果 control 没有，尝试从 plist 读取（如果存在）
+          if [ -z "$VERSION" ]; then
+            PLIST_FILES=$(find . -maxdepth 1 -name "*.plist" -type f)
+            PLIST_COUNT=$(echo "$PLIST_FILES" | wc -l)
+            if [ $PLIST_COUNT -eq 1 ]; then
+              PLIST_FILE=$(echo "$PLIST_FILES" | head -1)
+              VERSION=$(python3 -c "import plistlib; d=plistlib.load(open('$PLIST_FILE', 'rb')); print(d.get('CFBundleVersion', d.get('CFBundleShortVersionString', '')))" 2>/dev/null || echo "")
+            fi
           fi
 
           # 默认版本
@@ -153,23 +146,50 @@ jobs:
           else
             echo "提取到的版本号: $VERSION"
           fi
-
-          echo "PACKAGE_NAME=$PACKAGE_NAME" >> $GITHUB_ENV
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      # ---------- 修复 Makefile 路径 ----------
-      - name: 修复 Makefile 中的 Theos 路径
+      # ---------- 确定最终包名（优先级：Makefile TWEAK_NAME > plist CFBundleIdentifier > control Package > 仓库名） ----------
+      - name: 确定最终包名
         run: |
-          if [ -f "Makefile" ]; then
-            # 修复常见的绝对路径错误
-            sed -i 's|^include /tweak\.mk|include $(THEOS)/makefiles/tweak.mk|' Makefile
-            sed -i 's|^include /common\.mk|include $(THEOS)/makefiles/common.mk|' Makefile
-            sed -i 's|^include /project\.mk|include $(THEOS)/makefiles/project.mk|' Makefile
-            echo "Makefile 路径修复完成"
+          # 从步骤提取的包名
+          PKG_FROM_MAKEFILE="${{ steps.extract_package.outputs.PACKAGE_NAME }}"
+          if [ -n "$PKG_FROM_MAKEFILE" ]; then
+            PACKAGE_NAME="$PKG_FROM_MAKEFILE"
+            echo "使用 Makefile 中的包名: $PACKAGE_NAME"
           else
-            echo "警告：未找到 Makefile"
+            # 回退：从 plist 提取
+            PLIST_FILES=$(find . -maxdepth 1 -name "*.plist" -type f)
+            PLIST_COUNT=$(echo "$PLIST_FILES" | wc -l)
+            PACKAGE_NAME=""
+            if [ $PLIST_COUNT -eq 1 ]; then
+              PLIST_FILE=$(echo "$PLIST_FILES" | head -1)
+              PACKAGE_NAME=$(python3 -c "import plistlib; d=plistlib.load(open('$PLIST_FILE', 'rb')); print(d.get('CFBundleIdentifier', ''))" 2>/dev/null || echo "")
+            fi
+            if [ -n "$PACKAGE_NAME" ]; then
+              echo "从 plist 提取到包名: $PACKAGE_NAME"
+            else
+              # 再从 control 提取
+              CONTROL_FILE=""
+              if [ -f "control" ]; then
+                CONTROL_FILE="control"
+              elif [ -f "layout/DEBIAN/control" ]; then
+                CONTROL_FILE="layout/DEBIAN/control"
+              fi
+              if [ -n "$CONTROL_FILE" ]; then
+                PACKAGE_NAME=$(grep "^Package:" "$CONTROL_FILE" | awk '{print $2}' | head -1)
+              fi
+              if [ -n "$PACKAGE_NAME" ]; then
+                echo "从 control 提取到包名: $PACKAGE_NAME"
+              else
+                # 最后使用仓库名
+                PACKAGE_NAME="${GITHUB_REPOSITORY##*/}"
+                echo "未找到包名，使用仓库名: $PACKAGE_NAME"
+              fi
+            fi
           fi
+          echo "最终包名: $PACKAGE_NAME"
+          echo "PACKAGE_NAME=$PACKAGE_NAME" >> $GITHUB_ENV
 
       - name: 创建输出目录
         run: mkdir -p output
