@@ -1,4 +1,4 @@
-Package: com.eric.Addons
+Package: com.eric.addons
 Name: AddonsPro
 Depends: mobilesubstrate (>= 0.9.5000)
 Version: 1.0.0
