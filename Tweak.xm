@@ -1,166 +1,127 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 
-// 定义收据验证回调 block 类型
-typedef void (^VerifyReceiptCompletion)(id result, id error);
+// 1. 定义通用 block 类型
+typedef void (^VerifyCompletion)(id result, id error);
 
-// ---------------------------------------------------------------------
-// 1. 拦截 SwiftyStoreKit 的收据验证，返回伪造的成功结果
+// ========== 2. Hook 所有可能涉及收据验证的类 ==========
+
+// 2.1 SwiftyStoreKit (已知)
 %hook SwiftyStoreKit
-
-// 可能的方法名 1: - (void)verifyReceipt:(id)completion
 - (void)verifyReceipt:(id)completion {
     %log;
     if (completion) {
-        // 构造一个假的有效收据（包含 pro 产品的内购记录）
-        NSDictionary *fakeReceipt = @{
-            @"status": @(0),
-            @"receipt": @{
-                @"bundle_id": [[NSBundle mainBundle] bundleIdentifier],
-                @"in_app": @[
-                    @{
-                        @"product_id": @"com.picsew.pro",
-                        @"quantity": @(1),
-                        @"transaction_id": @"fake_transaction",
-                        @"original_transaction_id": @"fake_original",
-                        @"purchase_date": @"2024-01-01 00:00:00 Etc/GMT",
-                        @"original_purchase_date": @"2024-01-01 00:00:00 Etc/GMT",
-                        @"expires_date": @"2099-12-31 23:59:59 Etc/GMT"
-                    }
-                ]
-            }
-        };
-        ((VerifyReceiptCompletion)completion)(fakeReceipt, nil);
+        NSDictionary *fake = @{@"status": @0, @"receipt": @{@"in_app": @[]}};
+        ((VerifyCompletion)completion)(fake, nil);
     }
 }
-
-// 可能的方法名 2: - (void)verifyReceipt:(id)receiptData completion:(id)completion
-- (void)verifyReceipt:(id)receiptData completion:(id)completion {
+- (void)verifyReceipt:(id)data completion:(id)completion {
     %log;
-    if (completion) {
-        NSDictionary *fakeReceipt = @{@"status": @(0)};
-        ((VerifyReceiptCompletion)completion)(fakeReceipt, nil);
-    }
+    if (completion) ((VerifyCompletion)completion)(@{@"status": @0}, nil);
 }
-
 %end
 
-// ---------------------------------------------------------------------
-// 2. 拦截本地收据验证类
+// 2.2 InAppReceiptVerificator (已知)
 %hook InAppReceiptVerificator
-
-- (void)verifyReceipt:(id)receiptData completion:(id)completion {
+- (void)verifyReceipt:(id)data completion:(id)completion {
     %log;
-    if (completion) {
-        NSDictionary *fakeReceipt = @{@"status": @(0)};
-        ((VerifyReceiptCompletion)completion)(fakeReceipt, nil);
-    }
+    if (completion) ((VerifyCompletion)completion)(@{@"status": @0}, nil);
 }
-
 %end
 
-// ---------------------------------------------------------------------
-// 3. 阻止向服务端上报购买交易（避免服务端校验）
-%hook APMInAppPurchaseTransactionReporter
-
-- (void)reportTransactionWithProductID:(id)productID
-                         transactionID:(id)transactionID
-                 originalTransactionID:(id)originalTransactionID
-                   webOrderLineItemID:(id)webOrderLineItemID
-                           productType:(id)productType
-                          isFreeTrial:(bool)isFreeTrial
-                  isIntroductoryOffer:(bool)isIntroductoryOffer
-                      paymentQuantity:(long long)paymentQuantity
-                          purchaseDate:(id)purchaseDate
-                 originalPurchaseDate:(id)originalPurchaseDate
-           subscriptionExpirationDate:(id)subscriptionExpirationDate
-                     cancellationDate:(id)cancellationDate
-                          environment:(id)environment
-                           isVerified:(bool)isVerified {
+// 2.3 拦截 SKPaymentQueue 的交易处理（阻止真实购买流程）
+%hook SKPaymentQueue
+- (void)addPayment:(SKPayment *)payment {
     %log;
-    // 什么都不做，阻止上报
+    // 直接完成交易，不实际处理
+    [[SKPaymentQueue defaultQueue] finishTransaction:[[SKPaymentTransaction alloc] init]];
 }
-
+- (void)restoreCompletedTransactions {
+    %log;
+    // 阻止恢复购买，直接发送成功通知
+    [[NSNotificationCenter defaultCenter] postNotificationName:SKPaymentQueueRestoreCompletedTransactionsFinishedNotification object:self];
+}
+- (void)finishTransaction:(SKPaymentTransaction *)transaction {
+    %log;
+    // 阻止 finish 操作
+}
 %end
 
-// ---------------------------------------------------------------------
-// 4. 修改 UserDefaults 中所有与购买状态相关的键，强制应用认为已购买
+// 2.4 拦截 SKPaymentTransaction 的状态判断
+%hook SKPaymentTransaction
+- (SKPaymentTransactionState)transactionState {
+    %log;
+    return SKPaymentTransactionStatePurchased;
+}
+%end
+
+// ========== 3. Hook 可能的购买状态管理类 ==========
+// 以下类名基于常见命名推测，需要根据实际应用调整
+
+%hook PurchaseManager
+- (BOOL)isProUser { return YES; }
+- (BOOL)isPlusUser { return YES; }
+- (NSString *)userLevel { return @"Plus"; }
+- (NSArray *)purchasedProducts { return @[@"com.picsew.pro", @"com.picsew.plus"]; }
+%end
+
+%hook IAPHelper
+- (BOOL)hasPurchasedProduct:(NSString *)productId {
+    if ([productId containsString:@"pro"] || [productId containsString:@"plus"]) return YES;
+    return %orig;
+}
+%end
+
+%hook AppDelegate
+- (void)applicationDidFinishLaunching:(UIApplication *)app {
+    %log;
+    // 在启动后强行设置状态
+    [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"isPro"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    %orig;
+}
+%end
+
+// ========== 4. 拦截 UserDefaults 读取 ==========
 %hook NSUserDefaults
-
-- (BOOL)boolForKey:(NSString *)defaultName {
-    // 如果 key 是任何与购买相关的，直接返回 YES
-    NSArray *proKeys = @[@"isPro", @"isPlus", @"isPurchased", @"purchased", @"proPurchased"];
-    if ([proKeys containsObject:defaultName]) {
+- (BOOL)boolForKey:(NSString *)key {
+    if ([key isEqualToString:@"isPro"] || [key isEqualToString:@"isPlus"] || [key isEqualToString:@"isPurchased"]) {
         return YES;
     }
     return %orig;
 }
+- (id)objectForKey:(NSString *)key {
+    if ([key isEqualToString:@"purchaseLevel"]) return @"Plus";
+    if ([key isEqualToString:@"purchasedProducts"]) return @[@"com.picsew.pro", @"com.picsew.plus"];
+    return %orig;
+}
+- (NSString *)stringForKey:(NSString *)key {
+    if ([key isEqualToString:@"purchaseLevel"]) return @"Plus";
+    return %orig;
+}
+%end
 
-- (id)objectForKey:(NSString *)defaultName {
-    // 针对特定的 key 返回假数据
-    if ([defaultName isEqualToString:@"purchaseLevel"]) {
-        return @"Plus";
-    }
-    if ([defaultName isEqualToString:@"purchasedProducts"]) {
-        return @[@"com.picsew.pro", @"com.picsew.plus"];
+// ========== 5. 拦截 Keychain 读取（假设使用 Keychain 存储购买凭证） ==========
+%hook KeychainWrapper
+- (id)objectForKey:(NSString *)key {
+    if ([key containsString:@"receipt"] || [key containsString:@"purchase"]) {
+        // 返回假数据，可以是之前保存的 fake receipt
+        return nil; // 或返回假数据
     }
     return %orig;
 }
-
-- (NSString *)stringForKey:(NSString *)defaultName {
-    if ([defaultName isEqualToString:@"purchaseLevel"]) {
-        return @"Plus";
-    }
-    return %orig;
-}
-
 %end
 
-// ---------------------------------------------------------------------
-// 5. 如果应用内部有专门的购买状态类，尝试直接返回 YES（基于调试信息中的 "Purchase Level = Plus" 推测）
-// 下面这些类名是基于常见命名推测的，实际可能需要根据 class-dump 调整
-%hook PurchasedManager  // 假设存在这样的类
-
-- (BOOL)isProPurchased {
-    return YES;
-}
-
-- (BOOL)isPlusPurchased {
-    return YES;
-}
-
-- (NSString *)purchaseLevel {
-    return @"Plus";
-}
-
-%end
-
-%hook IAPManager
-
-- (BOOL)hasPurchasedPro {
-    return YES;
-}
-
-- (BOOL)isProUser {
-    return YES;
-}
-
-- (NSString *)userLevel {
-    return @"Plus";
-}
-
-%end
-
-// ---------------------------------------------------------------------
 // 初始化
 %ctor {
-    // 直接写入 UserDefaults 确保持久化
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    [defaults setBool:YES forKey:@"isPro"];
-    [defaults setBool:YES forKey:@"isPlus"];
-    [defaults setBool:YES forKey:@"isPurchased"];
-    [defaults setObject:@"Plus" forKey:@"purchaseLevel"];
-    [defaults setObject:@[@"com.picsew.pro", @"com.picsew.plus"] forKey:@"purchasedProducts"];
-    [defaults synchronize];
-    NSLog(@"ProUnlock: UserDefaults have been set.");
+    // 设置 UserDefaults
+    NSUserDefaults *def = [NSUserDefaults standardUserDefaults];
+    [def setBool:YES forKey:@"isPro"];
+    [def setBool:YES forKey:@"isPlus"];
+    [def setObject:@"Plus" forKey:@"purchaseLevel"];
+    [def setObject:@[@"com.picsew.pro", @"com.picsew.plus"] forKey:@"purchasedProducts"];
+    [def synchronize];
+    
+    // 打印日志，便于确认 dylib 加载
+    NSLog(@"✅ ProUnlock dylib loaded.");
 }
