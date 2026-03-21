@@ -1,485 +1,96 @@
 #import <UIKit/UIKit.h>
+#import <StoreKit/StoreKit.h>
 
-// =============================== BDLiveServiceCollectionCell ===============================
-%hook BDLiveServiceCollectionCell
+// 假设的头文件接口（实际项目需引入真实头文件）
+@protocol VIPViewControllerProtocol
+@property (assign, nonatomic) long long selectIndex;
+@property (strong, nonatomic) id VIPID;
+- (void)upadteVipWithID:(id)vipID;
+- (void)reloadLocalData;
+@end
 
-- (id)init {
-    self = %orig;
-    if (self) {
-        // 禁用自动布局转换，使 frame 修改生效
-        [(UIView *)self setTranslatesAutoresizingMaskIntoConstraints:NO];
-        // 移除所有已有约束
-        for (NSLayoutConstraint *constraint in [(UIView *)self constraints]) {
-            [(UIView *)self removeConstraint:constraint];
-        }
-        // 强制几何属性归零
-        [self setFrame:CGRectZero];
-        [self setBounds:CGRectZero];
-        [self setCenter:CGPointZero];
-        [self setHidden:YES];
-        // 处理 contentView
-        if ([self respondsToSelector:@selector(contentView)]) {
-            UIView *contentView = [self performSelector:@selector(contentView)];
-            contentView.translatesAutoresizingMaskIntoConstraints = NO;
-            for (NSLayoutConstraint *c in contentView.constraints) {
-                [contentView removeConstraint:c];
-            }
-            contentView.frame = CGRectZero;
-            contentView.bounds = CGRectZero;
-            [contentView setHidden:YES];
-        }
-    }
-    return self;
-}
+@protocol BuyVipViewProtocol
+- (void)showViewWithWindow:(id)window;
+- (void)surePress;
+- (void)buyWithProductID:(id)productID;
+- (void)completeTransaction:(id)transaction;
+- (void)restorePress;
+- (void)restoreSuccess;
+- (void)upadteVipWithID:(id)vipID;
+- (void)hideProHud:(id)hud;
+- (void)showAlertWithTitle:(id)title;
+@end
 
-- (id)initWithCoder:(NSCoder *)coder {
-    self = %orig;
-    if (self) {
-        [(UIView *)self setTranslatesAutoresizingMaskIntoConstraints:NO];
-        for (NSLayoutConstraint *constraint in [(UIView *)self constraints]) {
-            [(UIView *)self removeConstraint:constraint];
-        }
-        [self setFrame:CGRectZero];
-        [self setBounds:CGRectZero];
-        [self setCenter:CGPointZero];
-        [self setHidden:YES];
-        if ([self respondsToSelector:@selector(contentView)]) {
-            UIView *contentView = [self performSelector:@selector(contentView)];
-            contentView.translatesAutoresizingMaskIntoConstraints = NO;
-            for (NSLayoutConstraint *c in contentView.constraints) {
-                [contentView removeConstraint:c];
-            }
-            contentView.frame = CGRectZero;
-            contentView.bounds = CGRectZero;
-            [contentView setHidden:YES];
-        }
-    }
-    return self;
-}
+%hook VIPViewController
 
-- (void)setFrame:(CGRect)frame {
-    frame = CGRectZero;
+- (void)viewDidLoad {
     %orig;
+    // 强制设置VIP为有效状态
+    self.selectIndex = 0; // 假设0表示已选中的VIP等级
+    [self upadteVipWithID:@"com.example.vip.pro"]; // 替换为实际VIP标识
+    [self reloadLocalData]; // 刷新界面数据
 }
 
-- (void)setBounds:(CGRect)bounds {
-    bounds = CGRectZero;
+- (void)viewWillAppear:(BOOL)animated {
     %orig;
-}
-
-- (void)setCenter:(CGPoint)center {
-    center = CGPointZero;
-    %orig;
-}
-
-- (CGSize)intrinsicContentSize {
-    return CGSizeZero;
-}
-
-- (CGSize)systemLayoutSizeFittingSize:(CGSize)targetSize {
-    return CGSizeZero;
-}
-
-- (CGSize)systemLayoutSizeFittingSize:(CGSize)targetSize withHorizontalFittingPriority:(UILayoutPriority)horizontalPriority verticalFittingPriority:(UILayoutPriority)verticalPriority {
-    return CGSizeZero;
-}
-
-- (void)layoutSubviews {
-    %orig;
-    [self setFrame:CGRectZero];
-    [self setBounds:CGRectZero];
-    [self setCenter:CGPointZero];
-    if ([self respondsToSelector:@selector(contentView)]) {
-        UIView *contentView = [self performSelector:@selector(contentView)];
-        contentView.frame = CGRectZero;
-        contentView.bounds = CGRectZero;
-        [contentView setHidden:YES];
-    }
-    [self setHidden:YES];
+    // 每次出现时确保VIP状态有效
+    self.selectIndex = 0;
+    [self upadteVipWithID:@"com.example.vip.pro"];
+    [self reloadLocalData];
 }
 
 %end
 
-// =============================== BDMineServiceCollectionCell ===============================
-%hook BDMineServiceCollectionCell
+%hook BuyVipView
 
-- (id)init {
-    self = %orig;
-    if (self) {
-        [(UIView *)self setTranslatesAutoresizingMaskIntoConstraints:NO];
-        for (NSLayoutConstraint *constraint in [(UIView *)self constraints]) {
-            [(UIView *)self removeConstraint:constraint];
-        }
-        [self setFrame:CGRectZero];
-        [self setBounds:CGRectZero];
-        [self setCenter:CGPointZero];
-        [self setHidden:YES];
-        if ([self respondsToSelector:@selector(contentView)]) {
-            UIView *contentView = [self performSelector:@selector(contentView)];
-            contentView.translatesAutoresizingMaskIntoConstraints = NO;
-            for (NSLayoutConstraint *c in contentView.constraints) {
-                [contentView removeConstraint:c];
-            }
-            contentView.frame = CGRectZero;
-            contentView.bounds = CGRectZero;
-            [contentView setHidden:YES];
-        }
-    }
-    return self;
+- (void)showViewWithWindow:(id)window {
+    // 直接模拟购买成功，不显示购买界面
+    [self surePress];
+    // 不调用原始方法，避免显示窗口
+    // %orig;
 }
 
-- (id)initWithCoder:(NSCoder *)coder {
-    self = %orig;
-    if (self) {
-        [(UIView *)self setTranslatesAutoresizingMaskIntoConstraints:NO];
-        for (NSLayoutConstraint *constraint in [(UIView *)self constraints]) {
-            [(UIView *)self removeConstraint:constraint];
-        }
-        [self setFrame:CGRectZero];
-        [self setBounds:CGRectZero];
-        [self setCenter:CGPointZero];
-        [self setHidden:YES];
-        if ([self respondsToSelector:@selector(contentView)]) {
-            UIView *contentView = [self performSelector:@selector(contentView)];
-            contentView.translatesAutoresizingMaskIntoConstraints = NO;
-            for (NSLayoutConstraint *c in contentView.constraints) {
-                [contentView removeConstraint:c];
-            }
-            contentView.frame = CGRectZero;
-            contentView.bounds = CGRectZero;
-            [contentView setHidden:YES];
-        }
-    }
-    return self;
+- (void)surePress {
+    // 模拟购买成功流程
+    [self completeTransaction:nil];
+    [self upadteVipWithID:@"com.example.vip.pro"];
+    [self hideProHud:nil];
+    [self showAlertWithTitle:@"VIP已激活"];
 }
 
-- (void)setFrame:(CGRect)frame {
-    frame = CGRectZero;
-    %orig;
+- (void)buyWithProductID:(id)productID {
+    // 直接完成交易，不发起真实支付
+    [self completeTransaction:productID];
 }
 
-- (void)setBounds:(CGRect)bounds {
-    bounds = CGRectZero;
-    %orig;
+- (void)completeTransaction:(id)transaction {
+    // 跳过收据验证，直接更新VIP状态
+    [self upadteVipWithID:@"com.example.vip.pro"];
+    // 如果有服务器验证，需模拟成功响应
 }
 
-- (void)setCenter:(CGPoint)center {
-    center = CGPointZero;
-    %orig;
+- (void)restorePress {
+    // 模拟恢复购买成功
+    [self restoreSuccess];
 }
 
-- (CGSize)intrinsicContentSize {
-    return CGSizeZero;
-}
-
-- (CGSize)systemLayoutSizeFittingSize:(CGSize)targetSize {
-    return CGSizeZero;
-}
-
-- (CGSize)systemLayoutSizeFittingSize:(CGSize)targetSize withHorizontalFittingPriority:(UILayoutPriority)horizontalPriority verticalFittingPriority:(UILayoutPriority)verticalPriority {
-    return CGSizeZero;
-}
-
-- (void)layoutSubviews {
-    %orig;
-    [self setFrame:CGRectZero];
-    [self setBounds:CGRectZero];
-    [self setCenter:CGPointZero];
-    if ([self respondsToSelector:@selector(contentView)]) {
-        UIView *contentView = [self performSelector:@selector(contentView)];
-        contentView.frame = CGRectZero;
-        contentView.bounds = CGRectZero;
-        [contentView setHidden:YES];
-    }
-    [self setHidden:YES];
-}
-
-%end
-
-// =============================== BDHealthServiceCollectionCell ===============================
-%hook BDHealthServiceCollectionCell
-
-- (id)init {
-    self = %orig;
-    if (self) {
-        [(UIView *)self setTranslatesAutoresizingMaskIntoConstraints:NO];
-        for (NSLayoutConstraint *constraint in [(UIView *)self constraints]) {
-            [(UIView *)self removeConstraint:constraint];
-        }
-        [self setFrame:CGRectZero];
-        [self setBounds:CGRectZero];
-        [self setCenter:CGPointZero];
-        [self setHidden:YES];
-        if ([self respondsToSelector:@selector(contentView)]) {
-            UIView *contentView = [self performSelector:@selector(contentView)];
-            contentView.translatesAutoresizingMaskIntoConstraints = NO;
-            for (NSLayoutConstraint *c in contentView.constraints) {
-                [contentView removeConstraint:c];
-            }
-            contentView.frame = CGRectZero;
-            contentView.bounds = CGRectZero;
-            [contentView setHidden:YES];
+- (void)paymentQueue:(SKPaymentQueue *)queue updatedTransactions:(NSArray<SKPaymentTransaction *> *)transactions {
+    // 将所有交易标记为已购买，避免弹出Apple ID验证
+    for (SKPaymentTransaction *transaction in transactions) {
+        if (transaction.transactionState == SKPaymentTransactionStatePurchasing) {
+            // 模拟完成交易
+            [self completeTransaction:transaction];
+            [queue finishTransaction:transaction];
+        } else if (transaction.transactionState == SKPaymentTransactionStateFailed) {
+            // 将失败也转为成功
+            [self completeTransaction:transaction];
+            [queue finishTransaction:transaction];
+        } else {
+            // 其他状态直接完成
+            [self completeTransaction:transaction];
+            [queue finishTransaction:transaction];
         }
     }
-    return self;
-}
-
-- (id)initWithCoder:(NSCoder *)coder {
-    self = %orig;
-    if (self) {
-        [(UIView *)self setTranslatesAutoresizingMaskIntoConstraints:NO];
-        for (NSLayoutConstraint *constraint in [(UIView *)self constraints]) {
-            [(UIView *)self removeConstraint:constraint];
-        }
-        [self setFrame:CGRectZero];
-        [self setBounds:CGRectZero];
-        [self setCenter:CGPointZero];
-        [self setHidden:YES];
-        if ([self respondsToSelector:@selector(contentView)]) {
-            UIView *contentView = [self performSelector:@selector(contentView)];
-            contentView.translatesAutoresizingMaskIntoConstraints = NO;
-            for (NSLayoutConstraint *c in contentView.constraints) {
-                [contentView removeConstraint:c];
-            }
-            contentView.frame = CGRectZero;
-            contentView.bounds = CGRectZero;
-            [contentView setHidden:YES];
-        }
-    }
-    return self;
-}
-
-- (void)setFrame:(CGRect)frame {
-    frame = CGRectZero;
-    %orig;
-}
-
-- (void)setBounds:(CGRect)bounds {
-    bounds = CGRectZero;
-    %orig;
-}
-
-- (void)setCenter:(CGPoint)center {
-    center = CGPointZero;
-    %orig;
-}
-
-- (CGSize)intrinsicContentSize {
-    return CGSizeZero;
-}
-
-- (CGSize)systemLayoutSizeFittingSize:(CGSize)targetSize {
-    return CGSizeZero;
-}
-
-- (CGSize)systemLayoutSizeFittingSize:(CGSize)targetSize withHorizontalFittingPriority:(UILayoutPriority)horizontalPriority verticalFittingPriority:(UILayoutPriority)verticalPriority {
-    return CGSizeZero;
-}
-
-- (void)layoutSubviews {
-    %orig;
-    [self setFrame:CGRectZero];
-    [self setBounds:CGRectZero];
-    [self setCenter:CGPointZero];
-    if ([self respondsToSelector:@selector(contentView)]) {
-        UIView *contentView = [self performSelector:@selector(contentView)];
-        contentView.frame = CGRectZero;
-        contentView.bounds = CGRectZero;
-        [contentView setHidden:YES];
-    }
-    [self setHidden:YES];
-}
-
-%end
-
-// =============================== BDOtherServiceCollectionCell ===============================
-%hook BDOtherServiceCollectionCell
-
-- (id)init {
-    self = %orig;
-    if (self) {
-        [(UIView *)self setTranslatesAutoresizingMaskIntoConstraints:NO];
-        for (NSLayoutConstraint *constraint in [(UIView *)self constraints]) {
-            [(UIView *)self removeConstraint:constraint];
-        }
-        [self setFrame:CGRectZero];
-        [self setBounds:CGRectZero];
-        [self setCenter:CGPointZero];
-        [self setHidden:YES];
-        if ([self respondsToSelector:@selector(contentView)]) {
-            UIView *contentView = [self performSelector:@selector(contentView)];
-            contentView.translatesAutoresizingMaskIntoConstraints = NO;
-            for (NSLayoutConstraint *c in contentView.constraints) {
-                [contentView removeConstraint:c];
-            }
-            contentView.frame = CGRectZero;
-            contentView.bounds = CGRectZero;
-            [contentView setHidden:YES];
-        }
-    }
-    return self;
-}
-
-- (id)initWithCoder:(NSCoder *)coder {
-    self = %orig;
-    if (self) {
-        [(UIView *)self setTranslatesAutoresizingMaskIntoConstraints:NO];
-        for (NSLayoutConstraint *constraint in [(UIView *)self constraints]) {
-            [(UIView *)self removeConstraint:constraint];
-        }
-        [self setFrame:CGRectZero];
-        [self setBounds:CGRectZero];
-        [self setCenter:CGPointZero];
-        [self setHidden:YES];
-        if ([self respondsToSelector:@selector(contentView)]) {
-            UIView *contentView = [self performSelector:@selector(contentView)];
-            contentView.translatesAutoresizingMaskIntoConstraints = NO;
-            for (NSLayoutConstraint *c in contentView.constraints) {
-                [contentView removeConstraint:c];
-            }
-            contentView.frame = CGRectZero;
-            contentView.bounds = CGRectZero;
-            [contentView setHidden:YES];
-        }
-    }
-    return self;
-}
-
-- (void)setFrame:(CGRect)frame {
-    frame = CGRectZero;
-    %orig;
-}
-
-- (void)setBounds:(CGRect)bounds {
-    bounds = CGRectZero;
-    %orig;
-}
-
-- (void)setCenter:(CGPoint)center {
-    center = CGPointZero;
-    %orig;
-}
-
-- (CGSize)intrinsicContentSize {
-    return CGSizeZero;
-}
-
-- (CGSize)systemLayoutSizeFittingSize:(CGSize)targetSize {
-    return CGSizeZero;
-}
-
-- (CGSize)systemLayoutSizeFittingSize:(CGSize)targetSize withHorizontalFittingPriority:(UILayoutPriority)horizontalPriority verticalFittingPriority:(UILayoutPriority)verticalPriority {
-    return CGSizeZero;
-}
-
-- (void)layoutSubviews {
-    %orig;
-    [self setFrame:CGRectZero];
-    [self setBounds:CGRectZero];
-    [self setCenter:CGPointZero];
-    if ([self respondsToSelector:@selector(contentView)]) {
-        UIView *contentView = [self performSelector:@selector(contentView)];
-        contentView.frame = CGRectZero;
-        contentView.bounds = CGRectZero;
-        [contentView setHidden:YES];
-    }
-    [self setHidden:YES];
-}
-
-%end
-
-// =============================== BDAudioServiceCollectionViewCell ===============================
-%hook BDAudioServiceCollectionViewCell
-
-- (id)init {
-    self = %orig;
-    if (self) {
-        [(UIView *)self setTranslatesAutoresizingMaskIntoConstraints:NO];
-        for (NSLayoutConstraint *constraint in [(UIView *)self constraints]) {
-            [(UIView *)self removeConstraint:constraint];
-        }
-        [self setFrame:CGRectZero];
-        [self setBounds:CGRectZero];
-        [self setCenter:CGPointZero];
-        [self setHidden:YES];
-        if ([self respondsToSelector:@selector(contentView)]) {
-            UIView *contentView = [self performSelector:@selector(contentView)];
-            contentView.translatesAutoresizingMaskIntoConstraints = NO;
-            for (NSLayoutConstraint *c in contentView.constraints) {
-                [contentView removeConstraint:c];
-            }
-            contentView.frame = CGRectZero;
-            contentView.bounds = CGRectZero;
-            [contentView setHidden:YES];
-        }
-    }
-    return self;
-}
-
-- (id)initWithCoder:(NSCoder *)coder {
-    self = %orig;
-    if (self) {
-        [(UIView *)self setTranslatesAutoresizingMaskIntoConstraints:NO];
-        for (NSLayoutConstraint *constraint in [(UIView *)self constraints]) {
-            [(UIView *)self removeConstraint:constraint];
-        }
-        [self setFrame:CGRectZero];
-        [self setBounds:CGRectZero];
-        [self setCenter:CGPointZero];
-        [self setHidden:YES];
-        if ([self respondsToSelector:@selector(contentView)]) {
-            UIView *contentView = [self performSelector:@selector(contentView)];
-            contentView.translatesAutoresizingMaskIntoConstraints = NO;
-            for (NSLayoutConstraint *c in contentView.constraints) {
-                [contentView removeConstraint:c];
-            }
-            contentView.frame = CGRectZero;
-            contentView.bounds = CGRectZero;
-            [contentView setHidden:YES];
-        }
-    }
-    return self;
-}
-
-- (void)setFrame:(CGRect)frame {
-    frame = CGRectZero;
-    %orig;
-}
-
-- (void)setBounds:(CGRect)bounds {
-    bounds = CGRectZero;
-    %orig;
-}
-
-- (void)setCenter:(CGPoint)center {
-    center = CGPointZero;
-    %orig;
-}
-
-- (CGSize)intrinsicContentSize {
-    return CGSizeZero;
-}
-
-- (CGSize)systemLayoutSizeFittingSize:(CGSize)targetSize {
-    return CGSizeZero;
-}
-
-- (CGSize)systemLayoutSizeFittingSize:(CGSize)targetSize withHorizontalFittingPriority:(UILayoutPriority)horizontalPriority verticalFittingPriority:(UILayoutPriority)verticalPriority {
-    return CGSizeZero;
-}
-
-- (void)layoutSubviews {
-    %orig;
-    [self setFrame:CGRectZero];
-    [self setBounds:CGRectZero];
-    [self setCenter:CGPointZero];
-    if ([self respondsToSelector:@selector(contentView)]) {
-        UIView *contentView = [self performSelector:@selector(contentView)];
-        contentView.frame = CGRectZero;
-        contentView.bounds = CGRectZero;
-        [contentView setHidden:YES];
-    }
-    [self setHidden:YES];
 }
 
 %end
