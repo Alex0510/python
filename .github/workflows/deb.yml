@@ -13,28 +13,166 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      # 其他安装步骤保持不变 ...
-
-      # --- 新增：提取包名 ---
-      - name: 从 plist 提取包名
-        id: extract_package_name
+      - name: 安装系统依赖
         run: |
-          # 请根据你的实际 plist 文件名修改
-          PLIST_FILE="VIPUnlocker.plist"
-          DEFAULT_NAME="PythonHook"
+          sudo apt update
+          sudo apt install -y \
+            git build-essential clang fakeroot dpkg-dev \
+            libc6-dev curl perl xz-utils lld llvm python3
 
-          if [ ! -f "$PLIST_FILE" ]; then
-            echo "未找到 $PLIST_FILE，使用默认包名 $DEFAULT_NAME"
-            echo "PACKAGE_NAME=$DEFAULT_NAME" >> $GITHUB_ENV
-            exit 0
+      - name: 手动安装 ldid
+        run: |
+          sudo curl -L -o /usr/local/bin/ldid \
+            https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_linux_x86_64
+          sudo chmod +x /usr/local/bin/ldid
+          ldid --version || echo "ldid 安装成功"
+
+      - name: 验证 ld.lld 可用
+        run: |
+          which ld.lld
+          ld.lld --version
+
+      - name: 缓存 Theos 和 SDK
+        id: cache-theos
+        uses: actions/cache@v4
+        with:
+          path: $HOME/theos
+          key: ${{ runner.os }}-theos-${{ hashFiles('**/Makefile') }}
+          restore-keys: |
+            ${{ runner.os }}-theos-
+
+      - name: 安装 Theos 和 SDK（如果缓存未命中）
+        if: steps.cache-theos.outputs.cache-hit != 'true'
+        run: |
+          git clone --recursive https://github.com/theos/theos.git $HOME/theos
+          git clone https://github.com/theos/sdks.git $HOME/theos/sdks-repo
+          mkdir -p $HOME/theos/sdks
+          cp -r $HOME/theos/sdks-repo/iPhoneOS14.5.sdk $HOME/theos/sdks/ || {
+            echo "错误：未找到 iPhoneOS14.5.sdk，请检查 sdks 仓库内容"
+            exit 1
+          }
+          rm -rf $HOME/theos/sdks-repo
+          mkdir -p $HOME/theos/toolchain/linux/iphone/bin
+          ln -sf /usr/bin/clang $HOME/theos/toolchain/linux/iphone/bin/clang
+          ln -sf /usr/bin/clang++ $HOME/theos/toolchain/linux/iphone/bin/clang++
+          echo "Theos 和 SDK 安装完成"
+
+      - name: 准备 lipo 工具
+        run: |
+          LIPO_PATH=$(which llvm-lipo 2>/dev/null || \
+                      which llvm-lipo-18 2>/dev/null || \
+                      which llvm-lipo-17 2>/dev/null || \
+                      which llvm-lipo-16 2>/dev/null || \
+                      which llvm-lipo-15 2>/dev/null)
+          if [ -z "$LIPO_PATH" ]; then
+            echo "错误：找不到 llvm-lipo。请确保已安装 llvm 包。"
+            exit 1
+          fi
+          echo "找到 lipo: $LIPO_PATH"
+          mkdir -p $HOME/theos/toolchain/linux/iphone/bin
+          ln -sf $LIPO_PATH $HOME/theos/toolchain/linux/iphone/bin/lipo
+          echo "lipo 链接已创建"
+
+      - name: 设置环境变量
+        run: |
+          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+          echo "TARGET=iphone:clang:latest" >> $GITHUB_ENV
+          echo "ARCHS=arm64" >> $GITHUB_ENV
+          echo "LD=/usr/bin/ld.lld" >> $GITHUB_ENV
+          echo "LDFLAGS=-fuse-ld=lld" >> $GITHUB_ENV
+
+      # ---------- 智能提取包名和版本号 ----------
+      - name: 智能提取包名和版本号
+        id: extract_info
+        run: |
+          # 自动查找 .plist 文件
+          PLIST_FILES=$(find . -maxdepth 1 -name "*.plist" -type f)
+          PLIST_COUNT=$(echo "$PLIST_FILES" | wc -l)
+          PLIST_FILE=""
+          if [ $PLIST_COUNT -eq 1 ]; then
+            PLIST_FILE=$(echo "$PLIST_FILES" | head -1)
+            echo "找到 plist 文件: $PLIST_FILE"
+          elif [ $PLIST_COUNT -gt 1 ]; then
+            echo "错误：找到多个 plist 文件："
+            echo "$PLIST_FILES"
+            echo "请在仓库根目录只保留一个 .plist 文件，或在工作流中通过 PLIST_FILE 环境变量指定。"
+            exit 1
+          else
+            echo "未找到 plist 文件，将跳过 plist 读取。"
           fi
 
-          # 使用 Python 解析 plist，读取 CFBundleIdentifier
-          PACKAGE_NAME=$(python3 -c "import plistlib; print(plistlib.load(open('$PLIST_FILE', 'rb')).get('CFBundleIdentifier', '$DEFAULT_NAME'))")
-          echo "提取到的包名: $PACKAGE_NAME"
-          echo "PACKAGE_NAME=$PACKAGE_NAME" >> $GITHUB_ENV
+          # 提取包名
+          PACKAGE_NAME=""
+          if [ -n "$PLIST_FILE" ]; then
+            PACKAGE_NAME=$(python3 -c "import plistlib; d=plistlib.load(open('$PLIST_FILE', 'rb')); print(d.get('CFBundleIdentifier', ''))" 2>/dev/null || echo "")
+          fi
 
-      # 构建、提取版本号等步骤保持不变 ...
+          # 如果 plist 未提供，尝试从 control 文件读取
+          if [ -z "$PACKAGE_NAME" ]; then
+            CONTROL_FILE=""
+            if [ -f "control" ]; then
+              CONTROL_FILE="control"
+            elif [ -f "layout/DEBIAN/control" ]; then
+              CONTROL_FILE="layout/DEBIAN/control"
+            fi
+            if [ -n "$CONTROL_FILE" ]; then
+              PACKAGE_NAME=$(grep "^Package:" "$CONTROL_FILE" | awk '{print $2}' | head -1)
+            fi
+          fi
+
+          # 如果都没有，使用仓库名作为包名
+          if [ -z "$PACKAGE_NAME" ]; then
+            PACKAGE_NAME="${GITHUB_REPOSITORY##*/}"
+            echo "未找到包名，使用仓库名: $PACKAGE_NAME"
+          else
+            echo "提取到的包名: $PACKAGE_NAME"
+          fi
+
+          # 提取版本号
+          VERSION=""
+          # 优先从 control 文件读取
+          CONTROL_FILE=""
+          if [ -f "control" ]; then
+            CONTROL_FILE="control"
+          elif [ -f "layout/DEBIAN/control" ]; then
+            CONTROL_FILE="layout/DEBIAN/control"
+          fi
+          if [ -n "$CONTROL_FILE" ]; then
+            VERSION=$(grep "^Version:" "$CONTROL_FILE" | awk '{print $2}' | head -1)
+          fi
+
+          # 如果 control 没有，尝试从 plist 读取
+          if [ -z "$VERSION" ] && [ -n "$PLIST_FILE" ]; then
+            VERSION=$(python3 -c "import plistlib; d=plistlib.load(open('$PLIST_FILE', 'rb')); print(d.get('CFBundleVersion', d.get('CFBundleShortVersionString', '')))" 2>/dev/null || echo "")
+          fi
+
+          # 默认版本
+          if [ -z "$VERSION" ]; then
+            VERSION="0.0.1"
+            echo "未找到版本号，使用默认值: $VERSION"
+          else
+            echo "提取到的版本号: $VERSION"
+          fi
+
+          echo "PACKAGE_NAME=$PACKAGE_NAME" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      # ---------- 修复 Makefile 路径 ----------
+      - name: 修复 Makefile 中的 Theos 路径
+        run: |
+          if [ -f "Makefile" ]; then
+            # 修复常见的绝对路径错误
+            sed -i 's|^include /tweak\.mk|include $(THEOS)/makefiles/tweak.mk|' Makefile
+            sed -i 's|^include /common\.mk|include $(THEOS)/makefiles/common.mk|' Makefile
+            sed -i 's|^include /project\.mk|include $(THEOS)/makefiles/project.mk|' Makefile
+            echo "Makefile 路径修复完成"
+          else
+            echo "警告：未找到 Makefile"
+          fi
+
+      - name: 创建输出目录
+        run: mkdir -p output
 
       - name: 构建 .deb 包
         run: |
@@ -42,19 +180,13 @@ jobs:
           make package TARGET=iphone:clang:latest LD=/usr/bin/ld.lld LDFLAGS="-fuse-ld=lld" ARCHS=arm64
           find . -name "*.deb" -exec mv {} output/ \;
 
-      - name: 提取版本号
-        id: version
-        run: |
-          # 你的版本提取逻辑不变 ...
-          # 假设最终得到 VERSION 环境变量
-
       - name: 重命名 .deb 文件
         run: |
           cd output
           DEB_FILE=$(find . -maxdepth 1 -name "*.deb" | head -1)
           if [ -n "$DEB_FILE" ]; then
-            mv "$DEB_FILE" "${{ env.PACKAGE_NAME }}-${VERSION}.deb"
-            echo "已重命名为 ${{ env.PACKAGE_NAME }}-${VERSION}.deb"
+            mv "$DEB_FILE" "${{ env.PACKAGE_NAME }}-${{ env.VERSION }}.deb"
+            echo "已重命名为 ${{ env.PACKAGE_NAME }}-${{ env.VERSION }}.deb"
           else
             echo "错误：未找到 .deb 文件"
             exit 1
@@ -62,12 +194,12 @@ jobs:
 
       - name: 打包源码
         run: |
-          mkdir -p output
           git archive --format=zip --output=output/${{ env.PACKAGE_NAME }}-source.zip HEAD
           if [ ! -f "output/${{ env.PACKAGE_NAME }}-source.zip" ]; then
             echo "错误：源码包生成失败！"
             exit 1
           fi
+          echo "源码包生成成功：$(ls -la output/${{ env.PACKAGE_NAME }}-source.zip)"
 
       - name: 列出 output 目录内容（调试）
         run: ls -la output/
@@ -81,6 +213,8 @@ jobs:
             output/${{ env.PACKAGE_NAME }}-source.zip
           token: ${{ secrets.GITHUB_TOKEN }}
           name: Release ${{ github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 上传 .deb 包到 Artifacts
         uses: actions/upload-artifact@v4
