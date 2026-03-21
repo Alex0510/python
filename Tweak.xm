@@ -5,7 +5,6 @@
 typedef void (^VerifyReceiptCompletion)(id result, id error);
 static NSString *fakeReceiptPath = nil;
 
-// 创建假收据文件（包含 Pro 购买记录）
 static void createFakeReceipt() {
     NSString *documents = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
     fakeReceiptPath = [documents stringByAppendingPathComponent:@"fake_receipt"];
@@ -30,7 +29,6 @@ static void createFakeReceipt() {
     [data writeToFile:fakeReceiptPath atomically:YES];
 }
 
-// ========== 1. 伪造本地收据路径 ==========
 %hook NSBundle
 - (NSURL *)appStoreReceiptURL {
     if (!fakeReceiptPath) createFakeReceipt();
@@ -38,7 +36,6 @@ static void createFakeReceipt() {
 }
 %end
 
-// ========== 2. 拦截 SwiftyStoreKit 的收据验证 ==========
 %hook SwiftyStoreKit
 - (void)verifyReceipt:(id)completion {
     if (completion) {
@@ -62,7 +59,6 @@ static void createFakeReceipt() {
 }
 %end
 
-// ========== 3. 拦截 InAppReceiptVerificator 的本地验证 ==========
 %hook InAppReceiptVerificator
 - (void)verifyReceipt:(id)receiptData completion:(id)completion {
     if (completion) {
@@ -71,7 +67,6 @@ static void createFakeReceipt() {
 }
 %end
 
-// ========== 4. 拦截交易上报 ==========
 %hook APMInAppPurchaseTransactionReporter
 - (void)reportTransactionWithProductID:(id)productID
                          transactionID:(id)transactionID
@@ -91,10 +86,8 @@ static void createFakeReceipt() {
 }
 %end
 
-// ========== 5. 拦截 UserDefaults 读取 ==========
 %hook NSUserDefaults
 - (BOOL)boolForKey:(NSString *)key {
-    // 常见购买状态键
     NSArray *proKeys = @[@"isPro", @"isPlus", @"isPurchased", @"proPurchased", @"isProUser", @"hasPro", @"proEnabled"];
     if ([proKeys containsObject:key]) {
         return YES;
@@ -118,11 +111,10 @@ static void createFakeReceipt() {
 }
 %end
 
-// ========== 6. 拦截 Keychain 读取（常见 Keychain 包装类）==========
 %hook KeychainWrapper
 - (id)objectForKey:(NSString *)key {
     if ([key containsString:@"receipt"] || [key containsString:@"purchase"] || [key containsString:@"iap"]) {
-        return nil; // 返回 nil 让应用认为未存储，从而使用我们伪造的收据
+        return nil;
     }
     return %orig;
 }
@@ -137,11 +129,9 @@ static void createFakeReceipt() {
 }
 %end
 
-// ========== 7. 拦截网络请求（防止服务器验证）==========
 %hook NSURLSession
 - (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))completionHandler {
     NSString *urlString = request.URL.absoluteString;
-    // 如果请求是收据验证或服务器验证，返回模拟成功响应
     if ([urlString containsString:@"apple.com/verifyReceipt"] ||
         [urlString containsString:@"picsew.com/verify"] ||
         [urlString containsString:@"api.picsew.com"]) {
@@ -156,49 +146,6 @@ static void createFakeReceipt() {
 }
 %end
 
-// ========== 8. 拦截产品查询，使 Pro 产品返回并标记为已购买 ==========
-%hook SKProductsRequest
-- (void)start {
-    // 不实际启动，直接返回假产品响应
-    // 需要模拟 SKProductsResponse，但这里简单处理：跳过真实请求
-    // 更彻底的方法是 hook SKProductsRequestDelegate 的 productsRequest:didReceiveResponse:
-}
-%end
-
-%hook SKProductsRequestDelegate
-- (void)productsRequest:(SKProductsRequest *)request didReceiveResponse:(SKProductsResponse *)response {
-    // 修改 response.products，如果包含 Pro 产品则保留，否则添加一个假产品
-    // 由于 response 是只读的，我们无法直接修改，所以选择不调用原方法，而是自己构造一个响应
-    // 实际应用中，如果应用依赖产品信息，我们可以创建一个假产品对象
-    // 此处简化处理，直接调用原方法，但可能仍然无法解锁 Pro
-    %orig;
-}
-%end
-
-// ========== 9. 模拟购买流程 ==========
-%hook SKPaymentQueue
-- (void)addPayment:(SKPayment *)payment {
-    // 直接完成交易，模拟购买成功
-    // 创建假交易并通知观察者
-    SKPaymentTransaction *fakeTransaction = [[SKPaymentTransaction alloc] init];
-    [fakeTransaction setValue:payment.productIdentifier forKey:@"payment.productIdentifier"];
-    [fakeTransaction setValue:@(SKPaymentTransactionStatePurchased) forKey:@"transactionState"];
-    // 通知观察者（应用可能监听 SKPaymentQueue 的 updatedTransactions）
-    [[NSNotificationCenter defaultCenter] postNotificationName:SKPaymentQueueRestoreCompletedTransactionsFinishedNotification object:self];
-}
-%end
-
-%hook SKPaymentTransaction
-- (SKPaymentTransactionState)transactionState {
-    return SKPaymentTransactionStatePurchased;
-}
-- (SKPayment *)payment {
-    return nil; // 避免进一步处理
-}
-%end
-
-// ========== 10. Hook 可能存在的自定义购买管理类（根据头文件猜测）==========
-// 从头文件中，我们看到 _TtC6Picsew7Setting 类，可能包含购买状态
 %hook _TtC6Picsew7Setting
 - (BOOL)isProUser {
     return YES;
@@ -209,10 +156,6 @@ static void createFakeReceipt() {
 - (NSString *)userLevel {
     return @"Plus";
 }
-%end
-
-// 另外可能还有 _TtC6Picsew7Setting 的某些属性
-%hook _TtC6Picsew7Setting
 - (id)valueForKey:(NSString *)key {
     if ([key isEqualToString:@"isPro"] || [key isEqualToString:@"isPlus"]) {
         return @YES;
@@ -224,14 +167,12 @@ static void createFakeReceipt() {
 }
 %end
 
-// 可能还有 PurchaseManager 类（虽然头文件中没有，但常见命名）
 %hook PurchaseManager
 - (BOOL)isProUser { return YES; }
 - (BOOL)isPlusUser { return YES; }
 - (NSString *)userLevel { return @"Plus"; }
 %end
 
-// ========== 11. 启动时初始化 ==========
 %hook AppDelegate
 - (BOOL)application:(UIApplication *)app didFinishLaunchingWithOptions:(NSDictionary *)options {
     [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"isPro"];
@@ -244,7 +185,6 @@ static void createFakeReceipt() {
 }
 %end
 
-// ========== 初始化 ==========
 %ctor {
     createFakeReceipt();
     NSUserDefaults *def = [NSUserDefaults standardUserDefaults];
