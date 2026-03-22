@@ -1,54 +1,97 @@
 // Tweak.xm
 #import <UIKit/UIKit.h>
+#import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 
+// ============================================
+// DDLoginManager - VIP状态管理
+// ============================================
 %hook DDLoginManager
 
-// 返回VIP状态为YES
++ (id)sharedInstance {
+    return %orig;
+}
+
 - (BOOL)vipStatus {
     return YES;
 }
 
-// 返回远期过期时间（2099年）
 - (long long)vipExpiredTs {
-    return 4092599349; // 2099-01-01 00:00:00
+    // 设置为2099年
+    return 4092599349;
 }
 
-// 强制更新VIP状态
+- (BOOL)isVip {
+    return YES;
+}
+
+- (BOOL)hasProAccess {
+    return YES;
+}
+
 - (void)setVipStatus:(BOOL)status {
     %orig(YES);
 }
 
 %end
 
+// ============================================
+// DDVipViewController - VIP购买页面
+// ============================================
 %hook DDVipViewController
 
-// 跳过VIP购买页面，直接返回成功
-- (void)onPayButtonTouch {
-    // 模拟支付成功
-    [self performSelector:@selector(paymentSuccess) withObject:nil afterDelay:0.1];
+- (void)viewDidLoad {
+    %orig;
+    // 自动授予VIP并关闭页面
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        [self performSelector:@selector(onPayButtonTouch) withObject:nil afterDelay:0.1];
+    });
 }
 
-- (void)paymentSuccess {
-    // 更新VIP状态
+- (void)onPayButtonTouch {
+    // 模拟支付成功
     DDLoginManager *loginManager = [NSClassFromString(@"DDLoginManager") performSelector:@selector(sharedInstance)];
     [loginManager setVipStatus:YES];
     
-    // 关闭页面
+    // 显示成功提示
+    [self showSuccessAlert];
     [self dismissViewControllerAnimated:YES completion:nil];
-    
-    // 显示成功弹窗
-    DDVipPaySuccessPopView *popView = [[NSClassFromString(@"DDVipPaySuccessPopView") alloc] init];
-    [popView show];
+}
+
+- (void)showSuccessAlert {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"激活成功" 
+                                                                   message:@"已解锁所有Pro功能" 
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 %end
 
+// ============================================
+// DDStoreHomeViewController - 商城
+// ============================================
 %hook DDStoreHomeViewController
 
-// 跳过VIP检查，显示所有内容
+- (void)viewDidLoad {
+    %orig;
+    // 隐藏VIP按钮
+    [self performSelector:@selector(hideVipButton) withObject:nil afterDelay:0.1];
+}
+
+- (void)hideVipButton {
+    UIView *vipButton = [self valueForKey:@"vipButton"];
+    if (vipButton) {
+        vipButton.hidden = YES;
+    }
+    UIView *vipView = [self valueForKey:@"vipView"];
+    if (vipView) {
+        vipView.hidden = YES;
+    }
+}
+
 - (void)onVipButtonTouch {
-    // 直接授予VIP，不跳转购买页
+    // 直接授予VIP
     DDLoginManager *loginManager = [NSClassFromString(@"DDLoginManager") performSelector:@selector(sharedInstance)];
     [loginManager setVipStatus:YES];
     
@@ -56,26 +99,42 @@
     [self reloadData];
 }
 
-// 返回VIP按钮隐藏状态为YES（不显示VIP按钮）
-- (BOOL)shouldShowVipButton {
+- (void)reloadData {
+    // 重新加载数据
+    [self performSelector:@selector(loadData)];
+}
+
+%end
+
+// ============================================
+// DDStoreListView - 商城列表
+// ============================================
+%hook DDStoreListView
+
+- (NSArray *)dataArray {
+    NSArray *originalData = %orig;
+    // 返回所有数据，不过滤VIP内容
+    return originalData;
+}
+
+- (BOOL)shouldFilterVipContent {
     return NO;
 }
 
 %end
 
-%hook DDStoreListView
-
-// 返回所有数据，不过滤VIP内容
-- (id)dataArray {
-    id originalData = %orig;
-    return originalData; // 返回完整数据，不过滤
-}
-
-%end
-
+// ============================================
+// DDMoreFilterPopView - 滤镜弹窗
+// ============================================
 %hook DDMoreFilterPopView
 
-// 跳过VIP检查，显示所有滤镜
+- (void)viewDidLoad {
+    %orig;
+    // 自动授予VIP权限
+    DDLoginManager *loginManager = [NSClassFromString(@"DDLoginManager") performSelector:@selector(sharedInstance)];
+    [loginManager setVipStatus:YES];
+}
+
 - (void)onVipButtonTouch {
     // 直接授予VIP
     DDLoginManager *loginManager = [NSClassFromString(@"DDLoginManager") performSelector:@selector(sharedInstance)];
@@ -83,35 +142,70 @@
     [self reloadData];
 }
 
-%end
-
-%hook DDApplePurchaseManager
-
-// 拦截内购，直接返回成功
-- (void)buyProductWithType:(long long)type complete:(id)complete {
-    // 模拟购买成功
-    if (complete) {
-        void (^completion)(BOOL success, id error) = complete;
-        completion(YES, nil);
-    }
+- (void)onTimestampButtonTouch {
+    // 直接使用时间戳功能
+    %orig;
 }
 
 %end
 
-// 修改VIP检查宏或方法（如果存在）
+// ============================================
+// DDFilterThumeListView - 滤镜列表
+// ============================================
+%hook DDFilterThumeListView
+
+- (BOOL)isVipFilter:(id)filter {
+    return NO; // 所有滤镜都不是VIP专属
+}
+
+- (NSArray *)datas {
+    NSArray *data = %orig;
+    // 确保所有数据都可见
+    return data;
+}
+
+%end
+
+// ============================================
+// DDPhotoEditViewController - 图片编辑
+// ============================================
 %hook DDPhotoEditViewController
 
-// 允许VIP功能
+- (BOOL)canUseAdjustment:(long long)adjustmentType {
+    return YES; // 所有调整功能都可用
+}
+
 - (BOOL)isVipFeature {
     return YES;
 }
 
+- (void)onSaveButtonTouch {
+    // 允许保存编辑后的图片
+    %orig;
+}
+
 %end
 
-// 修改滤镜类VIP检查
+// ============================================
+// DDPhotoAdjustListView - 调整列表
+// ============================================
+%hook DDPhotoAdjustListView
+
+- (BOOL)isVipAdjustment:(id)adjustment {
+    return NO;
+}
+
+- (void)onResetItemViewTouch {
+    %orig;
+}
+
+%end
+
+// ============================================
+// DDFilterCell - 滤镜单元格
+// ============================================
 %hook DDFilterCell
 
-// 跳过VIP锁定的滤镜
 - (BOOL)isVipLocked {
     return NO;
 }
@@ -121,9 +215,15 @@
     %orig;
 }
 
+- (void)onIconImageViewTouchWithGesture:(id)gesture {
+    %orig;
+}
+
 %end
 
-// 修改导出功能（如果有VIP限制）
+// ============================================
+// DDPhotoDetailViewController - 照片详情
+// ============================================
 %hook DDPhotoDetailViewController
 
 - (BOOL)canExportVideo {
@@ -134,36 +234,139 @@
     return YES;
 }
 
+- (void)onShareButtonTouch {
+    // 允许分享
+    %orig;
+}
+
+- (void)onDownloadButtonTouch {
+    // 允许下载
+    %orig;
+}
+
 %end
 
-// 修改水印（如果有VIP去除水印功能）
+// ============================================
+// DDImagePickerViewController - 图片选择器
+// ============================================
+%hook DDImagePickerViewController
+
+- (BOOL)canSelectPhoto {
+    return YES;
+}
+
+- (void)onNextButtonTouch {
+    // 允许继续
+    %orig;
+}
+
+%end
+
+// ============================================
+// DDPAGTemplateCreateViewController - 模板创建
+// ============================================
 %hook DDPAGTemplateCreateViewController
 
 - (BOOL)shouldAddWatermark {
     return NO; // VIP无水印
 }
 
+- (void)onSaveButtonTouch {
+    %orig;
+}
+
 %end
 
-// 修改时间戳功能（VIP功能）
+// ============================================
+// DDVideoCropManager - 视频裁剪
+// ============================================
+%hook DDVideoCropManager
+
+- (BOOL)canExportVideoWithoutWatermark {
+    return YES;
+}
+
+- (BOOL)canExportHD {
+    return YES;
+}
+
+%end
+
+// ============================================
+// ABTimestampSettingListView - 时间戳设置
+// ============================================
 %hook ABTimestampSettingListView
 
 - (BOOL)isVipFeature {
     return YES;
 }
 
+- (void)onNoneButtonTouch {
+    %orig;
+}
+
 %end
 
-// 构造函数
+// ============================================
+// DDApplePurchaseManager - 内购管理
+// ============================================
+%hook DDApplePurchaseManager
+
+- (void)buyProductWithType:(long long)type complete:(void (^)(BOOL, id))complete {
+    // 模拟购买成功
+    if (complete) {
+        complete(YES, nil);
+    }
+}
+
+- (void)restoreWithComplete:(void (^)(BOOL, id))complete {
+    // 模拟恢复成功
+    if (complete) {
+        complete(YES, nil);
+    }
+}
+
+%end
+
+// ============================================
+// 通用VIP检查方法
+// ============================================
+%hook NSObject (VIPCheck)
+
+- (BOOL)isVIP {
+    return YES;
+}
+
+- (BOOL)isProUser {
+    return YES;
+}
+
+- (BOOL)hasProPermission {
+    return YES;
+}
+
+%end
+
+// ============================================
+// 构造函数 - 应用启动时初始化
+// ============================================
 %ctor {
-    // 在应用启动时直接设置VIP状态
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+    NSLog(@"FomzPro Tweak Loaded - Unlocking Pro Features");
+    
+    // 延迟设置VIP状态
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
         Class loginManagerClass = NSClassFromString(@"DDLoginManager");
         if (loginManagerClass) {
             id loginManager = [loginManagerClass performSelector:@selector(sharedInstance)];
-            if (loginManager) {
+            if (loginManager && [loginManager respondsToSelector:@selector(setVipStatus:)]) {
                 [loginManager setVipStatus:YES];
+                NSLog(@"FomzPro: VIP Status Activated");
             }
         }
+        
+        // 发送VIP状态更新通知
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"VIPStatusChanged" 
+                                                            object:nil 
+                                                          userInfo:@{@"isVip": @YES}];
     });
 }
