@@ -6,7 +6,7 @@
     <dict>
         <key>Bundles</key>
         <array>
-            <string>com.sugarmo.ScrollClip</string>
+            <string>com.lightByte.Budget</string>
         </array>
     </dict>
 </dict>
