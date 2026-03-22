@@ -1,5 +1,5 @@
-Package: com.eric.scrollclip
-Name: picsewPro
+Package: com.eric.budget
+Name: budgetPro
 Depends: mobilesubstrate (>= 0.9.5000)
 Version: 1.0.0
 Architecture: iphoneos-arm
