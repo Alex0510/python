@@ -1,383 +1,66 @@
-// Tweak.xm
+// Tweak.xm - 纯运行时方式，无需类声明
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 
-// ============================================
-// 类接口声明 - 解决前向声明问题
-// ============================================
-
-// DDLoginManager
-@interface DDLoginManager : NSObject
-+ (id)sharedInstance;
-- (BOOL)vipStatus;
-- (long long)vipExpiredTs;
-- (void)setVipStatus:(BOOL)status;
-@end
-
-// DDVipViewController
-@interface DDVipViewController : UIViewController
-- (void)onPayButtonTouch;
-- (void)dismissViewControllerAnimated:(BOOL)flag completion:(void (^)(void))completion;
-- (void)presentViewController:(UIViewController *)viewControllerToPresent animated:(BOOL)flag completion:(void (^)(void))completion;
-@end
-
-// DDStoreHomeViewController
-@interface DDStoreHomeViewController : UIViewController
-- (void)onVipButtonTouch;
-- (void)reloadData;
-- (void)loadData;
-- (void)viewDidLoad;
-@end
-
-// DDStoreListView
-@interface DDStoreListView : NSObject
-- (NSArray *)dataArray;
-@end
-
-// DDMoreFilterPopView
-@interface DDMoreFilterPopView : UIView
-- (void)onVipButtonTouch;
-- (void)reloadData;
-- (void)viewDidLoad;
-@end
-
-// DDFilterThumeListView
-@interface DDFilterThumeListView : NSObject
-- (NSArray *)datas;
-- (BOOL)isVipFilter:(id)filter;
-@end
-
-// DDPhotoEditViewController
-@interface DDPhotoEditViewController : UIViewController
-- (BOOL)canUseAdjustment:(long long)adjustmentType;
-- (BOOL)isVipFeature;
-- (void)onSaveButtonTouch;
-@end
-
-// DDPhotoAdjustListView
-@interface DDPhotoAdjustListView : NSObject
-- (BOOL)isVipAdjustment:(id)adjustment;
-- (void)onResetItemViewTouch;
-@end
-
-// DDFilterCell
-@interface DDFilterCell : UITableViewCell
-- (BOOL)isVipLocked;
-- (void)onActionButtonTouch;
-- (void)onIconImageViewTouchWithGesture:(id)gesture;
-@end
-
-// DDPhotoDetailViewController
-@interface DDPhotoDetailViewController : UIViewController
-- (BOOL)canExportVideo;
-- (BOOL)canExportImage;
-- (void)onShareButtonTouch;
-- (void)onDownloadButtonTouch;
-@end
-
-// DDImagePickerViewController
-@interface DDImagePickerViewController : UIViewController
-- (BOOL)canSelectPhoto;
-- (void)onNextButtonTouch;
-@end
-
-// DDPAGTemplateCreateViewController
-@interface DDPAGTemplateCreateViewController : UIViewController
-- (BOOL)shouldAddWatermark;
-- (void)onSaveButtonTouch;
-@end
-
-// DDVideoCropManager
-@interface DDVideoCropManager : NSObject
-- (BOOL)canExportVideoWithoutWatermark;
-- (BOOL)canExportHD;
-@end
-
-// ABTimestampSettingListView
-@interface ABTimestampSettingListView : NSObject
-- (BOOL)isVipFeature;
-- (void)onNoneButtonTouch;
-@end
-
-// DDApplePurchaseManager
-@interface DDApplePurchaseManager : NSObject
-- (void)buyProductWithType:(long long)type complete:(void (^)(BOOL, id))complete;
-- (void)restoreWithComplete:(void (^)(BOOL, id))complete;
-@end
-
-// ============================================
-// DDLoginManager - VIP状态管理
-// ============================================
-%hook DDLoginManager
-
-+ (id)sharedInstance {
-    return %orig;
+// 辅助函数 - 安全调用方法
+static void safePerformVoidMethod(id obj, SEL sel) {
+    if (obj && [obj respondsToSelector:sel]) {
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        [obj performSelector:sel];
+        #pragma clang diagnostic pop
+    }
 }
+
+static void safePerformVoidMethodWithObject(id obj, SEL sel, id param) {
+    if (obj && [obj respondsToSelector:sel]) {
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        [obj performSelector:sel withObject:param];
+        #pragma clang diagnostic pop
+    }
+}
+
+static void safeSetVipStatus(id obj, BOOL status) {
+    SEL sel = NSSelectorFromString(@"setVipStatus:");
+    if (obj && [obj respondsToSelector:sel]) {
+        NSNumber *value = [NSNumber numberWithBool:status];
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        [obj performSelector:sel withObject:value];
+        #pragma clang diagnostic pop
+    }
+}
+
+static BOOL safeGetVipStatus(id obj) {
+    SEL sel = NSSelectorFromString(@"vipStatus");
+    if (obj && [obj respondsToSelector:sel]) {
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        NSNumber *result = [obj performSelector:sel];
+        #pragma clang diagnostic pop
+        return [result boolValue];
+    }
+    return NO;
+}
+
+// ============================================
+// 动态方法替换 - 拦截所有VIP检查方法
+// ============================================
+
+// 拦截 NSObject 的通用 VIP 检查方法
+%hook NSObject
 
 - (BOOL)vipStatus {
     return YES;
 }
 
-- (long long)vipExpiredTs {
-    return 4092599349; // 2099-01-01
-}
-
-- (void)setVipStatus:(BOOL)status {
-    %orig(YES);
-}
-
-%end
-
-// ============================================
-// DDVipViewController - VIP购买页面
-// ============================================
-%hook DDVipViewController
-
-- (void)viewDidLoad {
-    %orig;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        [self performSelector:@selector(onPayButtonTouch) withObject:nil afterDelay:0.1];
-    });
-}
-
-- (void)onPayButtonTouch {
-    DDLoginManager *loginManager = [DDLoginManager sharedInstance];
-    [loginManager setVipStatus:YES];
-    [self dismissViewControllerAnimated:YES completion:nil];
-}
-
-%end
-
-// ============================================
-// DDStoreHomeViewController - 商城
-// ============================================
-%hook DDStoreHomeViewController
-
-- (void)viewDidLoad {
-    %orig;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.1 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        UIView *vipButton = [self valueForKey:@"vipButton"];
-        if (vipButton) vipButton.hidden = YES;
-        UIView *vipView = [self valueForKey:@"vipView"];
-        if (vipView) vipView.hidden = YES;
-    });
-}
-
-- (void)onVipButtonTouch {
-    DDLoginManager *loginManager = [DDLoginManager sharedInstance];
-    [loginManager setVipStatus:YES];
-    [self reloadData];
-}
-
-%end
-
-// ============================================
-// DDStoreListView - 商城列表
-// ============================================
-%hook DDStoreListView
-
-- (NSArray *)dataArray {
-    return %orig;
-}
-
-%end
-
-// ============================================
-// DDMoreFilterPopView - 滤镜弹窗
-// ============================================
-%hook DDMoreFilterPopView
-
-- (void)viewDidLoad {
-    %orig;
-    DDLoginManager *loginManager = [DDLoginManager sharedInstance];
-    [loginManager setVipStatus:YES];
-}
-
-- (void)onVipButtonTouch {
-    DDLoginManager *loginManager = [DDLoginManager sharedInstance];
-    [loginManager setVipStatus:YES];
-    [self reloadData];
-}
-
-%end
-
-// ============================================
-// DDFilterThumeListView - 滤镜列表
-// ============================================
-%hook DDFilterThumeListView
-
-- (BOOL)isVipFilter:(id)filter {
-    return NO;
-}
-
-- (NSArray *)datas {
-    return %orig;
-}
-
-%end
-
-// ============================================
-// DDPhotoEditViewController - 图片编辑
-// ============================================
-%hook DDPhotoEditViewController
-
-- (BOOL)canUseAdjustment:(long long)adjustmentType {
-    return YES;
-}
-
-- (BOOL)isVipFeature {
-    return YES;
-}
-
-- (void)onSaveButtonTouch {
-    %orig;
-}
-
-%end
-
-// ============================================
-// DDPhotoAdjustListView - 调整列表
-// ============================================
-%hook DDPhotoAdjustListView
-
-- (BOOL)isVipAdjustment:(id)adjustment {
-    return NO;
-}
-
-- (void)onResetItemViewTouch {
-    %orig;
-}
-
-%end
-
-// ============================================
-// DDFilterCell - 滤镜单元格
-// ============================================
-%hook DDFilterCell
-
-- (BOOL)isVipLocked {
-    return NO;
-}
-
-- (void)onActionButtonTouch {
-    %orig;
-}
-
-- (void)onIconImageViewTouchWithGesture:(id)gesture {
-    %orig;
-}
-
-%end
-
-// ============================================
-// DDPhotoDetailViewController - 照片详情
-// ============================================
-%hook DDPhotoDetailViewController
-
-- (BOOL)canExportVideo {
-    return YES;
-}
-
-- (BOOL)canExportImage {
-    return YES;
-}
-
-- (void)onShareButtonTouch {
-    %orig;
-}
-
-- (void)onDownloadButtonTouch {
-    %orig;
-}
-
-%end
-
-// ============================================
-// DDImagePickerViewController - 图片选择器
-// ============================================
-%hook DDImagePickerViewController
-
-- (BOOL)canSelectPhoto {
-    return YES;
-}
-
-- (void)onNextButtonTouch {
-    %orig;
-}
-
-%end
-
-// ============================================
-// DDPAGTemplateCreateViewController - 模板创建
-// ============================================
-%hook DDPAGTemplateCreateViewController
-
-- (BOOL)shouldAddWatermark {
-    return NO;
-}
-
-- (void)onSaveButtonTouch {
-    %orig;
-}
-
-%end
-
-// ============================================
-// DDVideoCropManager - 视频裁剪
-// ============================================
-%hook DDVideoCropManager
-
-- (BOOL)canExportVideoWithoutWatermark {
-    return YES;
-}
-
-- (BOOL)canExportHD {
-    return YES;
-}
-
-%end
-
-// ============================================
-// ABTimestampSettingListView - 时间戳设置
-// ============================================
-%hook ABTimestampSettingListView
-
-- (BOOL)isVipFeature {
-    return YES;
-}
-
-- (void)onNoneButtonTouch {
-    %orig;
-}
-
-%end
-
-// ============================================
-// DDApplePurchaseManager - 内购管理
-// ============================================
-%hook DDApplePurchaseManager
-
-- (void)buyProductWithType:(long long)type complete:(void (^)(BOOL, id))complete {
-    if (complete) {
-        complete(YES, nil);
-    }
-}
-
-- (void)restoreWithComplete:(void (^)(BOOL, id))complete {
-    if (complete) {
-        complete(YES, nil);
-    }
-}
-
-%end
-
-// ============================================
-// NSObject 扩展 - 通用VIP检查
-// ============================================
-%hook NSObject
-
 - (BOOL)isVIP {
+    return YES;
+}
+
+- (BOOL)isVip {
     return YES;
 }
 
@@ -389,23 +72,106 @@
     return YES;
 }
 
+- (BOOL)isPro {
+    return YES;
+}
+
+- (BOOL)canUseProFeature {
+    return YES;
+}
+
 %end
 
 // ============================================
-// 构造函数
+// 动态Hook - 使用类名字符串
 // ============================================
+
 %ctor {
-    NSLog(@"FomzPro Loaded - Pro Features Unlocked");
+    NSLog(@"FomzPro Loaded - Unlocking Pro Features");
     
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        DDLoginManager *loginManager = [DDLoginManager sharedInstance];
-        if (loginManager) {
-            [loginManager setVipStatus:YES];
-            NSLog(@"FomzPro: VIP Activated");
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        // 获取 DDLoginManager 类
+        Class loginManagerClass = NSClassFromString(@"DDLoginManager");
+        if (loginManagerClass) {
+            // 获取 sharedInstance 方法
+            SEL sharedSel = NSSelectorFromString(@"sharedInstance");
+            id loginManager = nil;
+            
+            if ([loginManagerClass respondsToSelector:sharedSel]) {
+                #pragma clang diagnostic push
+                #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                loginManager = [loginManagerClass performSelector:sharedSel];
+                #pragma clang diagnostic pop
+            }
+            
+            if (loginManager) {
+                // 设置 VIP 状态
+                safeSetVipStatus(loginManager, YES);
+                NSLog(@"FomzPro: VIP Status Activated");
+            }
         }
         
+        // 发送通知
         [[NSNotificationCenter defaultCenter] postNotificationName:@"VIPStatusChanged" 
                                                             object:nil 
                                                           userInfo:@{@"isVip": @YES}];
     });
+}
+
+// ============================================
+// Hook DDLoginManager - 使用动态方式
+// ============================================
+%hook NSObject
+
+- (long long)vipExpiredTs {
+    return 4092599349; // 2099-01-01
+}
+
+%end
+
+// 使用 MSHookMessageEx 动态替换
+#import <substrate.h>
+
+__attribute__((constructor)) static void init() {
+    // 获取 DDLoginManager 类
+    Class loginManagerClass = NSClassFromString(@"DDLoginManager");
+    if (loginManagerClass) {
+        // 替换 vipStatus 方法
+        SEL vipStatusSel = NSSelectorFromString(@"vipStatus");
+        Method originalMethod = class_getInstanceMethod(loginManagerClass, vipStatusSel);
+        if (originalMethod) {
+            IMP imp = imp_implementationWithBlock(^BOOL(id self) {
+                return YES;
+            });
+            method_setImplementation(originalMethod, imp);
+        }
+        
+        // 替换 vipExpiredTs 方法
+        SEL expiredSel = NSSelectorFromString(@"vipExpiredTs");
+        Method expiredMethod = class_getInstanceMethod(loginManagerClass, expiredSel);
+        if (expiredMethod) {
+            IMP imp = imp_implementationWithBlock(^long long(id self) {
+                return 4092599349;
+            });
+            method_setImplementation(expiredMethod, imp);
+        }
+        
+        // 替换 setVipStatus 方法（强制设置为YES）
+        SEL setVipSel = NSSelectorFromString(@"setVipStatus:");
+        Method setVipMethod = class_getInstanceMethod(loginManagerClass, setVipSel);
+        if (setVipMethod) {
+            IMP imp = imp_implementationWithBlock(^(id self, BOOL status) {
+                // 忽略传入的值，强制设置为 YES
+                SEL origSel = NSSelectorFromString(@"original_setVipStatus:");
+                if (!origSel) {
+                    origSel = setVipSel;
+                }
+                void (*orig)(id, SEL, BOOL) = (void (*)(id, SEL, BOOL))method_getImplementation(setVipMethod);
+                orig(self, setVipSel, YES);
+            });
+            method_setImplementation(setVipMethod, imp);
+        }
+        
+        NSLog(@"FomzPro: DDLoginManager hooked");
+    }
 }
