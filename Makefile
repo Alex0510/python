@@ -1,5 +1,5 @@
 # Makefile
-export THEOS=/opt/theos
+export THEOS=/home/runner/theos
 export ARCHS = arm64 arm64e
 export TARGET = iphone:clang:latest:13.0
 
@@ -10,7 +10,7 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME = FomzPro
 
 FomzPro_FILES = Tweak.xm
-FomzPro_CFLAGS = -fobjc-arc
-FomzPro_FRAMEWORKS = UIKit Foundation
+FomzPro_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
+FomzPro_FRAMEWORKS = UIKit Foundation QuartzCore CoreGraphics
 
-include $(THEOS_MAKE_PATH)/tweak.mk
+include $(THEOS)/makefiles/tweak.mk
