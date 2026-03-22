@@ -2,137 +2,75 @@
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
-#import <substrate.h>
 
-// ============================================
-// 辅助函数 - 只保留使用的
-// ============================================
-
-static void FomzPro_SetVipStatus(id obj, BOOL status) {
-    SEL sel = NSSelectorFromString(@"setVipStatus:");
-    if (obj && [obj respondsToSelector:sel]) {
-        NSNumber *value = [NSNumber numberWithBool:status];
-        #pragma clang diagnostic push
-        #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-        [obj performSelector:sel withObject:value];
-        #pragma clang diagnostic pop
-    }
-}
-
-// ============================================
-// Hook NSObject - 拦截所有VIP检查方法
-// ============================================
-%hook NSObject
-
-- (BOOL)vipStatus {
-    return YES;
-}
-
-- (BOOL)isVIP {
-    return YES;
-}
-
-- (BOOL)isVip {
-    return YES;
-}
-
-- (BOOL)isProUser {
-    return YES;
-}
-
-- (BOOL)hasProPermission {
-    return YES;
-}
-
-- (BOOL)isPro {
-    return YES;
-}
-
-- (BOOL)canUseProFeature {
-    return YES;
-}
-
-- (BOOL)proAccessGranted {
-    return YES;
-}
-
-- (long long)vipExpiredTs {
-    return 4092599349;
-}
-
-%end
-
-// ============================================
-// Hook DDLoginManager - 如果类存在
-// ============================================
-
-%group FomzProGroup
-
-%hook DDLoginManager
-
-+ (id)sharedInstance {
-    return %orig;
-}
-
-- (BOOL)vipStatus {
-    return YES;
-}
-
-- (long long)vipExpiredTs {
-    return 4092599349;
-}
-
-- (void)setVipStatus:(BOOL)status {
-    %orig(YES);
-}
-
-- (BOOL)isVip {
-    return YES;
-}
-
-- (BOOL)isPro {
-    return YES;
-}
-
-%end
-
-%end
-
-// ============================================
-// 构造函数
-// ============================================
-%ctor {
-    NSLog(@"FomzPro Loaded - Pro Features Unlocked");
+__attribute__((constructor)) static void init() {
+    Class nsObjectClass = [NSObject class];
     
-    // 尝试加载 DDLoginManager hook
-    Class loginManagerClass = NSClassFromString(@"DDLoginManager");
-    if (loginManagerClass) {
-        %init(FomzProGroup);
-        NSLog(@"FomzPro: DDLoginManager hooked successfully");
+    // 替换 vipStatus 方法
+    SEL vipStatusSel = NSSelectorFromString(@"vipStatus");
+    Method method = class_getInstanceMethod(nsObjectClass, vipStatusSel);
+    if (method) {
+        IMP imp = imp_implementationWithBlock(^BOOL(id self) { return YES; });
+        method_setImplementation(method, imp);
     } else {
-        NSLog(@"FomzPro: DDLoginManager not found, using fallback");
+        IMP imp = imp_implementationWithBlock(^BOOL(id self) { return YES; });
+        class_addMethod(nsObjectClass, vipStatusSel, imp, "B@:");
     }
     
-    // 延迟设置 VIP 状态
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        Class loginManagerClass2 = NSClassFromString(@"DDLoginManager");
-        if (loginManagerClass2) {
-            SEL sharedSel = NSSelectorFromString(@"sharedInstance");
-            id loginManager = nil;
-            if ([loginManagerClass2 respondsToSelector:sharedSel]) {
-                #pragma clang diagnostic push
-                #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-                loginManager = [loginManagerClass2 performSelector:sharedSel];
-                #pragma clang diagnostic pop
-            }
-            if (loginManager) {
-                FomzPro_SetVipStatus(loginManager, YES);
-                NSLog(@"FomzPro: VIP Status Activated");
-            }
-        }
-        
-        [[NSNotificationCenter defaultCenter] postNotificationName:@"VIPStatusChanged" 
-                                                            object:nil 
-                                                          userInfo:@{@"isVip": @YES}];
-    });
+    // 替换 isVIP 方法
+    SEL isVIPSel = NSSelectorFromString(@"isVIP");
+    method = class_getInstanceMethod(nsObjectClass, isVIPSel);
+    if (method) {
+        IMP imp = imp_implementationWithBlock(^BOOL(id self) { return YES; });
+        method_setImplementation(method, imp);
+    } else {
+        IMP imp = imp_implementationWithBlock(^BOOL(id self) { return YES; });
+        class_addMethod(nsObjectClass, isVIPSel, imp, "B@:");
+    }
+    
+    // 替换 isVip 方法
+    SEL isVipSel = NSSelectorFromString(@"isVip");
+    method = class_getInstanceMethod(nsObjectClass, isVipSel);
+    if (method) {
+        IMP imp = imp_implementationWithBlock(^BOOL(id self) { return YES; });
+        method_setImplementation(method, imp);
+    } else {
+        IMP imp = imp_implementationWithBlock(^BOOL(id self) { return YES; });
+        class_addMethod(nsObjectClass, isVipSel, imp, "B@:");
+    }
+    
+    // 替换 isProUser 方法
+    SEL isProUserSel = NSSelectorFromString(@"isProUser");
+    method = class_getInstanceMethod(nsObjectClass, isProUserSel);
+    if (method) {
+        IMP imp = imp_implementationWithBlock(^BOOL(id self) { return YES; });
+        method_setImplementation(method, imp);
+    } else {
+        IMP imp = imp_implementationWithBlock(^BOOL(id self) { return YES; });
+        class_addMethod(nsObjectClass, isProUserSel, imp, "B@:");
+    }
+    
+    // 替换 hasProPermission 方法
+    SEL hasProSel = NSSelectorFromString(@"hasProPermission");
+    method = class_getInstanceMethod(nsObjectClass, hasProSel);
+    if (method) {
+        IMP imp = imp_implementationWithBlock(^BOOL(id self) { return YES; });
+        method_setImplementation(method, imp);
+    } else {
+        IMP imp = imp_implementationWithBlock(^BOOL(id self) { return YES; });
+        class_addMethod(nsObjectClass, hasProSel, imp, "B@:");
+    }
+    
+    // 替换 vipExpiredTs 方法
+    SEL expiredSel = NSSelectorFromString(@"vipExpiredTs");
+    method = class_getInstanceMethod(nsObjectClass, expiredSel);
+    if (method) {
+        IMP imp = imp_implementationWithBlock(^long long(id self) { return 4092599349; });
+        method_setImplementation(method, imp);
+    } else {
+        IMP imp = imp_implementationWithBlock(^long long(id self) { return 4092599349; });
+        class_addMethod(nsObjectClass, expiredSel, imp, "q@:");
+    }
+    
+    NSLog(@"FomzPro: Loaded - All Pro features unlocked");
 }
