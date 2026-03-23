@@ -3,197 +3,57 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 
-// ============================================
-// 辅助函数 - 使用运行时动态调用
-// ============================================
-
-static void FomzPro_ActivateVIP() {
-    Class loginManagerClass = NSClassFromString(@"DDLoginManager");
-    if (loginManagerClass) {
-        SEL sharedSel = NSSelectorFromString(@"sharedInstance");
-        if ([loginManagerClass respondsToSelector:sharedSel]) {
-            id loginManager = ((id (*)(id, SEL))objc_msgSend)(loginManagerClass, sharedSel);
-            if (loginManager) {
-                SEL setVipSel = NSSelectorFromString(@"setVipStatus:");
-                if ([loginManager respondsToSelector:setVipSel]) {
-                    ((void (*)(id, SEL, BOOL))objc_msgSend)(loginManager, setVipSel, YES);
-                    NSLog(@"FomzPro: VIP activated");
-                }
-            }
-        }
-    }
-}
-
-static id FomzPro_GetValueForKey(id obj, NSString *key) {
-    SEL valueSel = NSSelectorFromString(@"valueForKey:");
-    if (obj && [obj respondsToSelector:valueSel]) {
-        #pragma clang diagnostic push
-        #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-        return [obj performSelector:valueSel withObject:key];
-        #pragma clang diagnostic pop
-    }
-    return nil;
-}
-
-static void FomzPro_SetTextForLabel(id label, NSString *text) {
-    if (label && [label respondsToSelector:@selector(setText:)]) {
-        [label setText:text];
-    }
-}
-
-static void FomzPro_SetTextColorForLabel(id label, UIColor *color) {
-    if (label && [label respondsToSelector:@selector(setTextColor:)]) {
-        [label setTextColor:color];
-    }
-}
-
-static void FomzPro_SetHiddenForView(id view, BOOL hidden) {
-    if (view && [view respondsToSelector:@selector(setHidden:)]) {
-        [view setHidden:hidden];
-    }
-}
-
-// ============================================
-// Hook DDSettingVipExpireCell - 修改VIP过期状态显示
-// ============================================
-
+// Tweak.xm
 %hook DDSettingVipExpireCell
 
-- (void)initWithStyle:(long long)style reuseIdentifier:(NSString *)reuseIdentifier {
+- (void)initWithStyle:(long long)arg1 reuseIdentifier:(id)arg2 {
     %orig;
     
-    // 设置 VIP 为未过期状态
-    dispatch_async(dispatch_get_main_queue(), ^{
-        // 获取过期标签并修改文本
-        id expireLabel = FomzPro_GetValueForKey(self, @"expireLabel");
-        if (expireLabel) {
-            FomzPro_SetTextForLabel(expireLabel, @"永久有效");
-            FomzPro_SetTextColorForLabel(expireLabel, [UIColor systemGreenColor]);
-        }
-        
-        // 获取提示标签并修改
-        id tipsLabel = FomzPro_GetValueForKey(self, @"tipsLabel");
-        if (tipsLabel) {
-            FomzPro_SetTextForLabel(tipsLabel, @"Pro会员");
-            FomzPro_SetTextColorForLabel(tipsLabel, [UIColor systemOrangeColor]);
-        }
-        
-        // 隐藏王冠图标（过期图标）
-        id crowImageView = FomzPro_GetValueForKey(self, @"crowImageView");
-        if (crowImageView) {
-            FomzPro_SetHiddenForView(crowImageView, YES);
-        }
-        
-        // 显示Pro标识
-        id fomzImageView = FomzPro_GetValueForKey(self, @"fomzImageView");
-        if (fomzImageView) {
-            FomzPro_SetHiddenForView(fomzImageView, NO);
-        }
-        
-        // 修改 Pro 标签文本
-        id fomzLabel = FomzPro_GetValueForKey(self, @"fomzLabel");
-        if (fomzLabel) {
-            FomzPro_SetTextForLabel(fomzLabel, @"● 已激活");
-            FomzPro_SetTextColorForLabel(fomzLabel, [UIColor systemGreenColor]);
-        }
-        
-        // 修改背景视图样式
-        id backView = FomzPro_GetValueForKey(self, @"backView");
-        if (backView && [backView respondsToSelector:@selector(setBackgroundColor:)]) {
-            [backView setBackgroundColor:[UIColor colorWithRed:0.95 green:0.98 blue:0.95 alpha:1.0]];
-        }
-    });
-}
-
-- (void)initWithCoder:(NSCoder *)coder {
-    %orig;
-    
-    // 同样修改过期状态
-    dispatch_async(dispatch_get_main_queue(), ^{
-        id expireLabel = FomzPro_GetValueForKey(self, @"expireLabel");
-        if (expireLabel) {
-            FomzPro_SetTextForLabel(expireLabel, @"永久有效");
-            FomzPro_SetTextColorForLabel(expireLabel, [UIColor systemGreenColor]);
-        }
-        
-        id crowImageView = FomzPro_GetValueForKey(self, @"crowImageView");
-        if (crowImageView) {
-            FomzPro_SetHiddenForView(crowImageView, YES);
-        }
-        
-        id fomzLabel = FomzPro_GetValueForKey(self, @"fomzLabel");
-        if (fomzLabel) {
-            FomzPro_SetTextForLabel(fomzLabel, @"● 已激活");
-            FomzPro_SetTextColorForLabel(fomzLabel, [UIColor systemGreenColor]);
-        }
-    });
-}
-
-- (void)layoutSubviews {
-    %orig;
-    
-    // 每次布局时确保显示正确
-    id expireLabel = FomzPro_GetValueForKey(self, @"expireLabel");
-    if (expireLabel) {
-        NSString *currentText = [expireLabel performSelector:@selector(text)];
-        if (currentText && [currentText containsString:@"过期"]) {
-            FomzPro_SetTextForLabel(expireLabel, @"永久有效");
-            FomzPro_SetTextColorForLabel(expireLabel, [UIColor systemGreenColor]);
-        }
+    // 修改VIP过期标签
+    if (self.$__lazy_storage_$_expireLabel) {
+        [self.$__lazy_storage_$_expireLabel setText:@"到期时间: 2999年12月29日"];
     }
-    
-    id crowImageView = FomzPro_GetValueForKey(self, @"crowImageView");
-    if (crowImageView && !crowImageView.hidden) {
-        FomzPro_SetHiddenForView(crowImageView, YES);
+    if (self.$__lazy_storage_$_tipsLabel) {
+        [self.$__lazy_storage_$_tipsLabel setText:@"已升级 Fomz Pro"];
     }
 }
 
 %end
 
-// ============================================
-// Hook NSObject - 拦截所有VIP检查方法
-// ============================================
+%hook DDVipViewController
 
-%hook NSObject
-
-- (BOOL)vipStatus {
-    return YES;
+- (void)viewDidLayoutSubviews {
+    %orig;
+    
+    // 修改价格为永久
+    self.monthPriceString = @"永久免费";
+    self.yearsPriceString = @"永久免费";
+    self.foreverPriceString = @"永久免费";
+    
+    // 修改支付按钮
+    [self.$__lazy_storage_$_payButton setTitle:@"已激活永久会员" forState:UIControlStateNormal];
+    [self.$__lazy_storage_$_payButton setEnabled:NO];
+    
+    // 隐藏恢复按钮
+    [self.$__lazy_storage_$_recoveryButton setHidden:YES];
 }
 
-- (BOOL)isVIP {
-    return YES;
-}
-
-- (BOOL)isVip {
-    return YES;
-}
-
-- (BOOL)isProUser {
-    return YES;
-}
-
-- (BOOL)hasProPermission {
-    return YES;
-}
-
-- (BOOL)isPro {
-    return YES;
-}
-
-- (long long)vipExpiredTs {
-    return 4092599349; // 2099-01-01
+- (void)onPayButtonTouch {
+    // 拦截支付点击，显示提示
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"提示" 
+                                                                   message:@"您已是永久会员，无需重复购买" 
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 %end
 
-// ============================================
-// 构造函数
-// ============================================
-
+// 修改本地存储
 %ctor {
-    NSLog(@"FomzPro: DDSettingVipExpireCell tweak loaded");
-    
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        FomzPro_ActivateVIP();
-    });
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    [defaults setObject:@"2999-12-29" forKey:@"vipExpireDate"];
+    [defaults setBool:YES forKey:@"isVip"];
+    [defaults setBool:YES forKey:@"isFomzPro"];
+    [defaults synchronize];
 }
