@@ -98,6 +98,15 @@
 @end
 
 // ============================================================
+// 常量定义 - 使用浮点数避免隐式转换警告
+// ============================================================
+
+#define VIP_DAYS 36500
+#define VIP_DATE 20991231
+#define INFINITE_TRAFFIC 999999999.0f
+#define INFINITE_POINT 9999999.0f
+
+// ============================================================
 // 全局变量
 // ============================================================
 
@@ -127,39 +136,35 @@ static UIViewController *getCurrentViewController() {
 
 static void forceRefreshUI() {
     dispatch_async(dispatch_get_main_queue(), ^{
-        // 刷新首页UI
-        UTHomeViewController *homeVC = nil;
         UITabBarController *tabBar = (UITabBarController *)getCurrentViewController();
         if ([tabBar isKindOfClass:[UITabBarController class]]) {
             for (UIViewController *vc in tabBar.viewControllers) {
                 if ([vc isKindOfClass:NSClassFromString(@"UTHomeViewController")]) {
-                    homeVC = (UTHomeViewController *)vc;
-                    break;
+                    UTHomeViewController *homeVC = (UTHomeViewController *)vc;
+                    [homeVC uiRefresh];
+                    [homeVC doUiRefresh];
                 }
-            }
-        }
-        
-        if (homeVC) {
-            [homeVC uiRefresh];
-            [homeVC doUiRefresh];
-        }
-        
-        // 刷新我的页面UI
-        UTMeViewController *meVC = nil;
-        if ([tabBar isKindOfClass:[UITabBarController class]]) {
-            for (UIViewController *vc in tabBar.viewControllers) {
                 if ([vc isKindOfClass:NSClassFromString(@"UTMeViewController")]) {
-                    meVC = (UTMeViewController *)vc;
-                    break;
+                    UTMeViewController *meVC = (UTMeViewController *)vc;
+                    [meVC uiRefresh];
+                    [meVC doUiRefresh];
                 }
             }
-        }
-        
-        if (meVC) {
-            [meVC uiRefresh];
-            [meVC doUiRefresh];
         }
     });
+}
+
+static void fixUserData(UTUserModelManager *manager) {
+    if (manager && manager.model && manager.model.user) {
+        UTUser *user = manager.model.user;
+        [user setMemberid:@"vip_ultimate"];
+        [user setMembertime:VIP_DAYS];
+        [user setMemberdate:VIP_DATE];
+        [user setLimitkbps:0.0f];
+        [user setLimitkbytes:0.0f];
+        [user setDaykbytes:INFINITE_TRAFFIC];
+        [user setPoint:INFINITE_POINT];
+    }
 }
 
 // ============================================================
@@ -168,7 +173,6 @@ static void forceRefreshUI() {
 
 %group UnlockVIP
 
-// 核心VIP判断 - 最关键的方法
 %hook UTUserModelManager
 
 - (BOOL)isVip {
@@ -197,62 +201,23 @@ static void forceRefreshUI() {
 
 - (void)userModelReadFromUserData {
     %orig;
-    // 读取后立即修改用户数据
-    if (self.model && self.model.user) {
-        UTUser *user = self.model.user;
-        [user setMemberid:@"vip_ultimate"];
-        [user setMembertime:36500];
-        [user setMemberdate:20991231];
-        [user setLimitkbps:0];
-        [user setLimitkbytes:0];
-        [user setDaykbytes:999999999];
-        [user setPoint:9999999];
-    }
+    fixUserData(self);
 }
 
 - (void)userModelWriteToUserData {
-    // 写入前修改数据
-    if (self.model && self.model.user) {
-        UTUser *user = self.model.user;
-        [user setMemberid:@"vip_ultimate"];
-        [user setMembertime:36500];
-        [user setMemberdate:20991231];
-        [user setLimitkbps:0];
-        [user setLimitkbytes:0];
-        [user setDaykbytes:999999999];
-        [user setPoint:9999999];
-    }
+    fixUserData(self);
     %orig;
 }
 
 - (void)update:(id)data {
     %orig;
-    // 更新后立即修正
-    if (self.model && self.model.user) {
-        UTUser *user = self.model.user;
-        [user setMemberid:@"vip_ultimate"];
-        [user setMembertime:36500];
-        [user setMemberdate:20991231];
-        [user setLimitkbps:0];
-        [user setLimitkbytes:0];
-        [user setDaykbytes:999999999];
-        [user setPoint:9999999];
-    }
+    fixUserData(self);
     forceRefreshUI();
 }
 
 - (void)userModelChanged:(id)sender {
     %orig;
-    // 确保数据被修正
-    if (self.model && self.model.user) {
-        UTUser *user = self.model.user;
-        if (![user.memberid isEqualToString:@"vip_ultimate"]) {
-            [user setMemberid:@"vip_ultimate"];
-        }
-        if (user.membertime < 36500) {
-            [user setMembertime:36500];
-        }
-    }
+    fixUserData(self);
     forceRefreshUI();
 }
 
@@ -261,11 +226,11 @@ static void forceRefreshUI() {
 %hook UTUser
 
 - (int)membertime {
-    return 36500;
+    return VIP_DAYS;
 }
 
 - (int)memberdate {
-    return 20991231;
+    return VIP_DATE;
 }
 
 - (float)limitkbps {
@@ -277,11 +242,11 @@ static void forceRefreshUI() {
 }
 
 - (float)daykbytes {
-    return 999999999.0f;
+    return INFINITE_TRAFFIC;
 }
 
 - (float)point {
-    return 9999999.0f;
+    return INFINITE_POINT;
 }
 
 - (NSString *)memberid {
@@ -293,7 +258,7 @@ static void forceRefreshUI() {
 %hook UTTrialManager
 
 - (BOOL)canApplyTrialVip {
-    return NO;  // 不需要试用
+    return NO;
 }
 
 - (BOOL)doApplyTrialVip {
@@ -325,7 +290,6 @@ static void forceRefreshUI() {
 }
 
 - (unsigned long long)vpnState {
-    // 保持原有状态，不要强制修改
     return %orig;
 }
 
@@ -334,7 +298,6 @@ static void forceRefreshUI() {
 %hook UTStoreViewController
 
 - (void)clickToPay {
-    // 拦截购买
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"提示" 
                                                                    message:@"您已是VIP会员，无需购买" 
                                                             preferredStyle:UIAlertControllerStyleAlert];
@@ -372,23 +335,19 @@ static void forceRefreshUI() {
 - (void)uiRefresh {
     %orig;
     
-    // 修改VIP标签
     if (self.labelVipInfo) {
         self.labelVipInfo.text = @"VIP会员 · 永久有效";
         self.labelVipInfo.textColor = [UIColor colorWithRed:0.95 green:0.75 blue:0.2 alpha:1.0];
     }
     
-    // 修改线路标签
     if (self.labelLineSelected) {
         self.labelLineSelected.text = @"专属VIP线路";
     }
     
-    // 隐藏试用/额外信息
     if (self.viewExtraInfo) {
         self.viewExtraInfo.hidden = YES;
     }
     
-    // 修改今日流量显示
     if (self.labelTrafficToday) {
         self.labelTrafficToday.text = @"今日已用 0 MB";
     }
@@ -408,7 +367,6 @@ static void forceRefreshUI() {
 
 - (void)userModelChanged:(id)sender {
     %orig;
-    // 用户模型变化时重新修正
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [self uiRefresh];
     });
@@ -416,7 +374,6 @@ static void forceRefreshUI() {
 
 - (void)vpnStateChanged:(id)sender forceAnimation:(BOOL)force {
     %orig;
-    // VPN状态变化时刷新UI
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [self uiRefresh];
     });
@@ -426,18 +383,9 @@ static void forceRefreshUI() {
     return NO;
 }
 
-// 拦截加速按钮点击，确保VIP线路可用
 - (void)clickToAccelerate {
-    // 确保VIP数据已设置
     UTUserModelManager *manager = [NSClassFromString(@"UTUserModelManager") sharedInstance];
-    if (manager && manager.model && manager.model.user) {
-        UTUser *user = manager.model.user;
-        if (![user.memberid isEqualToString:@"vip_ultimate"]) {
-            [user setMemberid:@"vip_ultimate"];
-            [user setMembertime:36500];
-            [user setLimitkbps:0];
-        }
-    }
+    fixUserData(manager);
     %orig;
 }
 
@@ -506,40 +454,27 @@ static void forceRefreshUI() {
     
     %init(UnlockVIP);
     
-    // 延迟执行，确保所有类已加载
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        // 强制设置用户数据
         UTUserModelManager *manager = [NSClassFromString(@"UTUserModelManager") sharedInstance];
         if (manager) {
-            // 确保用户模型存在
             if (!manager.model) {
                 UTUserModel *model = [[NSClassFromString(@"UTUserModel") alloc] init];
                 UTUser *user = [[NSClassFromString(@"UTUser") alloc] init];
                 [user setMemberid:@"vip_ultimate"];
-                [user setMembertime:36500];
-                [user setMemberdate:20991231];
-                [user setLimitkbps:0];
-                [user setLimitkbytes:0];
-                [user setDaykbytes:999999999];
-                [user setPoint:9999999];
+                [user setMembertime:VIP_DAYS];
+                [user setMemberdate:VIP_DATE];
+                [user setLimitkbps:0.0f];
+                [user setLimitkbytes:0.0f];
+                [user setDaykbytes:INFINITE_TRAFFIC];
+                [user setPoint:INFINITE_POINT];
                 [model setUser:user];
                 [manager setModel:model];
-            } else if (manager.model.user) {
-                UTUser *user = manager.model.user;
-                [user setMemberid:@"vip_ultimate"];
-                [user setMembertime:36500];
-                [user setMemberdate:20991231];
-                [user setLimitkbps:0];
-                [user setLimitkbytes:0];
-                [user setDaykbytes:999999999];
-                [user setPoint:9999999];
+            } else {
+                fixUserData(manager);
             }
-            
-            // 保存到本地
             [manager userModelWriteToUserData];
         }
         
-        // 刷新UI
         forceRefreshUI();
     });
 }
