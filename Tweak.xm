@@ -3,11 +3,14 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 
-// 根据实际类结构声明
+// 根据实际类结构声明 - Swift 类
 @interface DDSettingVipCell : UITableViewCell
 @property (nonatomic, strong) UIView *backView;
 @property (nonatomic, strong) UIImageView *fomzImageView;
 @property (nonatomic, strong) UILabel *fomzLabel;
+- (void)initWithStyle:(long long)arg1 reuseIdentifier:(id)arg2;
+- (void)initWithCoder:(NSCoder *)coder;
+- (void).cxx_destruct;
 @end
 
 // 声明DDVipViewController类
@@ -57,12 +60,19 @@ static void replaced_setText(id self, SEL _cmd, NSString *text) {
     BOOL shouldModify = NO;
     NSString *newText = nil;
     
-    if (text && [text containsString:@"到期时间"]) {
+    // 移除水印和修改文本
+    if (text && [text containsString:@"破解来源"]) {
+        shouldModify = YES;
+        newText = @""; // 清空水印
+    } else if (text && [text containsString:@"到期时间"]) {
         shouldModify = YES;
         newText = @"到期时间: 2999年12月29日";
     } else if (text && ([text containsString:@"Fomz"] || [text containsString:@"Pro"] || [text containsString:@"会员"])) {
-        shouldModify = YES;
-        newText = @"已升级 Fomz Pro";
+        // 避免重复修改已经改过的文本
+        if (![text isEqualToString:@"已升级 Fomz Pro"]) {
+            shouldModify = YES;
+            newText = @"已升级 Fomz Pro";
+        }
     }
     
     if (shouldModify && newText) {
@@ -74,44 +84,76 @@ static void replaced_setText(id self, SEL _cmd, NSString *text) {
     }
 }
 
-// Hook DDSettingVipCell
+// Hook DDSettingVipCell - 增强版
 %hook DDSettingVipCell
 
 - (void)initWithStyle:(long long)arg1 reuseIdentifier:(id)arg2 {
     %orig;
     
+    // 延迟执行，确保视图完全加载
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if (self.fomzLabel) {
-            self.fomzLabel.text = @"已升级 Fomz Pro";
-        }
-        
-        // 查找并修改expireLabel（可能在subviews中）
-        for (UIView *subview in self.subviews) {
-            if ([subview isKindOfClass:[UILabel class]]) {
-                UILabel *label = (UILabel *)subview;
-                if (label.text && [label.text containsString:@"到期时间"]) {
-                    label.text = @"到期时间: 2999年12月29日";
-                } else if (label.text && [label.text containsString:@"Fomz"]) {
-                    label.text = @"已升级 Fomz Pro";
-                }
-            }
-        }
+        [self modifyVIPCell];
+    });
+}
+
+- (void)initWithCoder:(NSCoder *)coder {
+    %orig;
+    
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self modifyVIPCell];
     });
 }
 
 - (void)layoutSubviews {
     %orig;
-    
-    if (self.fomzLabel && ![self.fomzLabel.text isEqualToString:@"已升级 Fomz Pro"]) {
-        self.fomzLabel.text = @"已升级 Fomz Pro";
+    [self modifyVIPCell];
+}
+
+- (void)modifyVIPCell {
+    // 修改 fomzLabel
+    if (self.fomzLabel) {
+        if (![self.fomzLabel.text isEqualToString:@"已升级 Fomz Pro"]) {
+            self.fomzLabel.text = @"已升级 Fomz Pro";
+            self.fomzLabel.textColor = [UIColor colorWithRed:0.2 green:0.6 blue:0.2 alpha:1.0];
+        }
     }
     
-    for (UIView *subview in self.subviews) {
+    // 递归查找所有子视图
+    [self modifySubviews:self.subviews];
+}
+
+- (void)modifySubviews:(NSArray *)subviews {
+    for (UIView *subview in subviews) {
         if ([subview isKindOfClass:[UILabel class]]) {
             UILabel *label = (UILabel *)subview;
-            if (label.text && [label.text containsString:@"到期时间"]) {
-                label.text = @"到期时间: 2999年12月29日";
+            if (label.text) {
+                NSString *originalText = label.text;
+                
+                // 移除水印
+                if ([originalText containsString:@"破解来源"]) {
+                    label.text = @"";
+                    label.hidden = YES;
+                    NSLog(@"✅ Removed watermark: %@", originalText);
+                }
+                // 修改到期时间
+                else if ([originalText containsString:@"到期时间"] && ![originalText containsString:@"2999"]) {
+                    label.text = @"到期时间: 2999年12月29日";
+                    label.textColor = [UIColor colorWithRed:0.2 green:0.6 blue:0.2 alpha:1.0];
+                    NSLog(@"✅ Modified expire date");
+                }
+                // 修改会员状态
+                else if (([originalText containsString:@"Fomz"] || [originalText containsString:@"Pro"]) && 
+                         ![originalText isEqualToString:@"已升级 Fomz Pro"]) {
+                    label.text = @"已升级 Fomz Pro";
+                    label.textColor = [UIColor colorWithRed:0.2 green:0.6 blue:0.2 alpha:1.0];
+                    NSLog(@"✅ Modified VIP status");
+                }
             }
+        }
+        
+        // 递归检查子视图
+        if (subview.subviews.count > 0) {
+            [self modifySubviews:subview.subviews];
         }
     }
 }
@@ -127,10 +169,34 @@ static void replaced_setText(id self, SEL _cmd, NSString *text) {
     // 延迟执行多次确保UI更新
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [self updateVIPUI];
+        [self removeWatermarks];
     });
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [self updateVIPUI];
+        [self removeWatermarks];
     });
+}
+
+- (void)removeWatermarks {
+    // 递归查找并移除所有水印
+    [self removeWatermarksFromView:self.view];
+}
+
+- (void)removeWatermarksFromView:(UIView *)view {
+    for (UIView *subview in view.subviews) {
+        if ([subview isKindOfClass:[UILabel class]]) {
+            UILabel *label = (UILabel *)subview;
+            if (label.text && [label.text containsString:@"破解来源"]) {
+                label.text = @"";
+                label.hidden = YES;
+                NSLog(@"✅ Removed watermark from VIP view");
+            }
+        }
+        
+        if (subview.subviews.count > 0) {
+            [self removeWatermarksFromView:subview];
+        }
+    }
 }
 
 - (void)updateVIPUI {
@@ -161,8 +227,10 @@ static void replaced_setText(id self, SEL _cmd, NSString *text) {
     
     // 修改提示文本
     if (self.contentLabel) {
-        self.contentLabel.text = @"您已是永久Pro会员，享受全部功能";
-        self.contentLabel.textColor = [UIColor colorWithRed:0.2 green:0.6 blue:0.2 alpha:1.0];
+        if (![self.contentLabel.text containsString:@"永久Pro会员"]) {
+            self.contentLabel.text = @"您已是永久Pro会员，享受全部功能";
+            self.contentLabel.textColor = [UIColor colorWithRed:0.2 green:0.6 blue:0.2 alpha:1.0];
+        }
     }
     
     if (self.payDesLabel) {
@@ -229,7 +297,6 @@ static void replaced_setText(id self, SEL _cmd, NSString *text) {
 }
 
 - (id)vipExpireDate {
-    // 修复：移除未使用的 date 变量
     NSLog(@"✅ vipExpireDate called - returning 2999-12-29");
     NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
     [formatter setDateFormat:@"yyyy-MM-dd"];
@@ -342,7 +409,7 @@ static void replaced_setText(id self, SEL _cmd, NSString *text) {
         [defaults setInteger:1 forKey:@"vipType"];
         [defaults synchronize];
         
-        // Hook UILabel的setText方法
+        // Hook UILabel的setText方法 - 用于拦截所有文本设置
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
             Class labelClass = [UILabel class];
@@ -357,5 +424,6 @@ static void replaced_setText(id self, SEL _cmd, NSString *text) {
         NSLog(@"✅ Fomz Pro Tweak Loaded - All VIP features unlocked");
         NSLog(@"✅ Bundle ID: com.imendon.fomz");
         NSLog(@"✅ VIP status forced to YES");
+        NSLog(@"✅ Watermark removal enabled");
     }
 }
