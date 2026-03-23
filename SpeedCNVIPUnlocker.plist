@@ -6,7 +6,7 @@
     <dict>
         <key>Bundles</key>
         <array>
-            <string>com.imendon.fomz</string>
+            <string>cloud.speedcn.speed.Speedcn</string>
         </array>
     </dict>
 </dict>
