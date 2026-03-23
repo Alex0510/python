@@ -3,7 +3,7 @@
 #import <objc/runtime.h>
 
 // ============================================================
-// 类完整声明（避免前向声明问题）
+// 类完整声明
 // ============================================================
 
 @interface UTUser : NSObject
@@ -14,6 +14,13 @@
 @property (nonatomic, assign) float limitkbps;
 @property (nonatomic, assign) float limitkbytes;
 @property (nonatomic, assign) float daykbytes;
+- (void)setMembertime:(int)membertime;
+- (void)setMemberdate:(int)memberdate;
+- (void)setLimitkbps:(float)limitkbps;
+- (void)setLimitkbytes:(float)limitkbytes;
+- (void)setDaykbytes:(float)daykbytes;
+- (void)setPoint:(float)point;
+- (void)setMemberid:(NSString *)memberid;
 @end
 
 @interface UTUserModel : NSObject
@@ -72,32 +79,25 @@
 - (unsigned long long)getUserSelectedHost:(id *)host andName:(id *)name;
 @end
 
-@interface UTGateModel : NSObject
-@property (nonatomic, strong) NSArray *normalGates;
-@end
-
 // ============================================================
-// Helper函数获取当前窗口（兼容iOS 13+）
+// Helper函数 - 不使用keyWindow
 // ============================================================
 
 static UIViewController *getCurrentViewController() {
+    // 使用UIApplication的windows数组（不会触发deprecation警告）
+    NSArray *windows = [UIApplication sharedApplication].windows;
     UIWindow *keyWindow = nil;
     
-    // iOS 13+ 兼容方式
-    if (@available(iOS 13.0, *)) {
-        for (UIWindowScene *windowScene in [UIApplication sharedApplication].connectedScenes) {
-            if (windowScene.activationState == UISceneActivationStateForegroundActive) {
-                for (UIWindow *window in windowScene.windows) {
-                    if (window.isKeyWindow) {
-                        keyWindow = window;
-                        break;
-                    }
-                }
-                if (keyWindow) break;
-            }
+    for (UIWindow *window in windows) {
+        if (window.isKeyWindow) {
+            keyWindow = window;
+            break;
         }
-    } else {
-        keyWindow = [UIApplication sharedApplication].keyWindow;
+    }
+    
+    // 如果没有找到keyWindow，使用第一个window
+    if (!keyWindow && windows.count > 0) {
+        keyWindow = windows[0];
     }
     
     return keyWindow.rootViewController;
