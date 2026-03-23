@@ -14,17 +14,18 @@
 @property (nonatomic, assign) float limitkbps;
 @property (nonatomic, assign) float limitkbytes;
 @property (nonatomic, assign) float daykbytes;
+- (void)setMemberid:(NSString *)memberid;
 - (void)setMembertime:(int)membertime;
 - (void)setMemberdate:(int)memberdate;
 - (void)setLimitkbps:(float)limitkbps;
 - (void)setLimitkbytes:(float)limitkbytes;
 - (void)setDaykbytes:(float)daykbytes;
 - (void)setPoint:(float)point;
-- (void)setMemberid:(NSString *)memberid;
 @end
 
 @interface UTUserModel : NSObject
 @property (nonatomic, strong) UTUser *user;
+- (void)setUser:(UTUser *)user;
 @end
 
 @interface UTUserModelManager : NSObject
@@ -36,6 +37,10 @@
 - (unsigned long long)memberLevel;
 - (BOOL)isVipTrialStage;
 - (BOOL)hasBinded;
+- (void)userModelChanged:(id)sender;
+- (void)update:(id)data;
+- (void)userModelWriteToUserData;
+- (void)userModelReadFromUserData;
 @end
 
 @interface UTTrialManager : NSObject
@@ -44,6 +49,7 @@
 - (BOOL)doApplyTrialVip;
 - (BOOL)isTrialVip;
 - (int)remainSeconds;
+- (void)doEndTrialVip;
 @end
 
 @interface UTVpnModelManager : NSObject
@@ -51,40 +57,57 @@
 @property (nonatomic, assign) unsigned long long vpnState;
 @property (nonatomic, assign) BOOL vpnGlobalMode;
 @property (nonatomic, assign) BOOL vpnGameAccelerated;
+- (void)updateVpnState:(unsigned long long)state;
+- (void)updateGlobalMode:(BOOL)mode;
+- (void)updateGameAccelerated:(BOOL)accelerated;
 @end
 
 @interface UTStoreViewController : UIViewController
 - (void)clickToPay;
+- (void)clickCardType:(id)sender;
+- (void)doPayment:(id)sender;
 @end
 
 @interface UTHomeViewController : UIViewController
 @property (nonatomic, strong) UILabel *labelVipInfo;
 @property (nonatomic, strong) UILabel *labelLineSelected;
+@property (nonatomic, strong) UILabel *labelTrafficToday;
 @property (nonatomic, strong) UIView *viewExtraInfo;
+@property (nonatomic, strong) UIButton *buttonAccelerate;
 - (void)uiRefresh;
-- (void)viewDidLoad;
+- (void)doUiRefresh;
+- (void)userModelChanged:(id)sender;
+- (void)vpnStateChanged:(id)sender forceAnimation:(BOOL)force;
 - (BOOL)showTrialOrPayInfoForFreeMember;
+- (void)clickToAccelerate;
+- (void)doStopVpn;
+- (void)doStartVpn;
 @end
 
 @interface UTMeViewController : UIViewController
 @property (nonatomic, strong) UILabel *labelMemberInfo;
-@property (nonatomic, strong) UIImageView *imageviewMemberLv;
-- (void)viewDidLoad;
+@property (nonatomic, strong) UILabel *labelId;
+@property (nonatomic, strong) UILabel *labelNickname;
+@property (nonatomic, strong) UIImageView *imageviewAvatar;
+- (void)uiRefresh;
+- (void)doUiRefresh;
+- (void)userModelChanged:(id)sender;
 @end
 
-@interface UTGateModelManager : NSObject
-+ (instancetype)sharedInstance;
-@property (nonatomic, strong) id model;
-- (BOOL)updateNormalGates:(id)gates;
-- (unsigned long long)getUserSelectedHost:(id *)host andName:(id *)name;
+@interface UTLoginViewController : UIViewController
 @end
 
 // ============================================================
-// Helper函数 - 不使用keyWindow
+// 全局变量
+// ============================================================
+
+static BOOL hasModifiedUserData = NO;
+
+// ============================================================
+// Helper函数
 // ============================================================
 
 static UIViewController *getCurrentViewController() {
-    // 使用UIApplication的windows数组（不会触发deprecation警告）
     NSArray *windows = [UIApplication sharedApplication].windows;
     UIWindow *keyWindow = nil;
     
@@ -95,7 +118,6 @@ static UIViewController *getCurrentViewController() {
         }
     }
     
-    // 如果没有找到keyWindow，使用第一个window
     if (!keyWindow && windows.count > 0) {
         keyWindow = windows[0];
     }
@@ -103,16 +125,41 @@ static UIViewController *getCurrentViewController() {
     return keyWindow.rootViewController;
 }
 
-static void showAlert(NSString *title, NSString *message) {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title 
-                                                                   message:message 
-                                                            preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:nil]];
-    
-    UIViewController *rootVC = getCurrentViewController();
-    if (rootVC) {
-        [rootVC presentViewController:alert animated:YES completion:nil];
-    }
+static void forceRefreshUI() {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        // 刷新首页UI
+        UTHomeViewController *homeVC = nil;
+        UITabBarController *tabBar = (UITabBarController *)getCurrentViewController();
+        if ([tabBar isKindOfClass:[UITabBarController class]]) {
+            for (UIViewController *vc in tabBar.viewControllers) {
+                if ([vc isKindOfClass:NSClassFromString(@"UTHomeViewController")]) {
+                    homeVC = (UTHomeViewController *)vc;
+                    break;
+                }
+            }
+        }
+        
+        if (homeVC) {
+            [homeVC uiRefresh];
+            [homeVC doUiRefresh];
+        }
+        
+        // 刷新我的页面UI
+        UTMeViewController *meVC = nil;
+        if ([tabBar isKindOfClass:[UITabBarController class]]) {
+            for (UIViewController *vc in tabBar.viewControllers) {
+                if ([vc isKindOfClass:NSClassFromString(@"UTMeViewController")]) {
+                    meVC = (UTMeViewController *)vc;
+                    break;
+                }
+            }
+        }
+        
+        if (meVC) {
+            [meVC uiRefresh];
+            [meVC doUiRefresh];
+        }
+    });
 }
 
 // ============================================================
@@ -121,6 +168,7 @@ static void showAlert(NSString *title, NSString *message) {
 
 %group UnlockVIP
 
+// 核心VIP判断 - 最关键的方法
 %hook UTUserModelManager
 
 - (BOOL)isVip {
@@ -145,6 +193,67 @@ static void showAlert(NSString *title, NSString *message) {
 
 - (BOOL)hasBinded {
     return YES;
+}
+
+- (void)userModelReadFromUserData {
+    %orig;
+    // 读取后立即修改用户数据
+    if (self.model && self.model.user) {
+        UTUser *user = self.model.user;
+        [user setMemberid:@"vip_ultimate"];
+        [user setMembertime:36500];
+        [user setMemberdate:20991231];
+        [user setLimitkbps:0];
+        [user setLimitkbytes:0];
+        [user setDaykbytes:999999999];
+        [user setPoint:9999999];
+    }
+}
+
+- (void)userModelWriteToUserData {
+    // 写入前修改数据
+    if (self.model && self.model.user) {
+        UTUser *user = self.model.user;
+        [user setMemberid:@"vip_ultimate"];
+        [user setMembertime:36500];
+        [user setMemberdate:20991231];
+        [user setLimitkbps:0];
+        [user setLimitkbytes:0];
+        [user setDaykbytes:999999999];
+        [user setPoint:9999999];
+    }
+    %orig;
+}
+
+- (void)update:(id)data {
+    %orig;
+    // 更新后立即修正
+    if (self.model && self.model.user) {
+        UTUser *user = self.model.user;
+        [user setMemberid:@"vip_ultimate"];
+        [user setMembertime:36500];
+        [user setMemberdate:20991231];
+        [user setLimitkbps:0];
+        [user setLimitkbytes:0];
+        [user setDaykbytes:999999999];
+        [user setPoint:9999999];
+    }
+    forceRefreshUI();
+}
+
+- (void)userModelChanged:(id)sender {
+    %orig;
+    // 确保数据被修正
+    if (self.model && self.model.user) {
+        UTUser *user = self.model.user;
+        if (![user.memberid isEqualToString:@"vip_ultimate"]) {
+            [user setMemberid:@"vip_ultimate"];
+        }
+        if (user.membertime < 36500) {
+            [user setMembertime:36500];
+        }
+    }
+    forceRefreshUI();
 }
 
 %end
@@ -184,11 +293,11 @@ static void showAlert(NSString *title, NSString *message) {
 %hook UTTrialManager
 
 - (BOOL)canApplyTrialVip {
-    return YES;
+    return NO;  // 不需要试用
 }
 
 - (BOOL)doApplyTrialVip {
-    return YES;
+    return NO;
 }
 
 - (BOOL)isTrialVip {
@@ -196,7 +305,11 @@ static void showAlert(NSString *title, NSString *message) {
 }
 
 - (int)remainSeconds {
-    return 315360000;
+    return 0;
+}
+
+- (void)doEndTrialVip {
+    // 不做任何事
 }
 
 %end
@@ -212,7 +325,8 @@ static void showAlert(NSString *title, NSString *message) {
 }
 
 - (unsigned long long)vpnState {
-    return 2;
+    // 保持原有状态，不要强制修改
+    return %orig;
 }
 
 %end
@@ -220,7 +334,20 @@ static void showAlert(NSString *title, NSString *message) {
 %hook UTStoreViewController
 
 - (void)clickToPay {
-    showAlert(@"提示", @"VIP功能已解锁，无需购买");
+    // 拦截购买
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"提示" 
+                                                                   message:@"您已是VIP会员，无需购买" 
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)clickCardType:(id)sender {
+    // 不执行任何操作
+}
+
+- (void)doPayment:(id)sender {
+    // 不执行任何操作
 }
 
 %end
@@ -228,6 +355,14 @@ static void showAlert(NSString *title, NSString *message) {
 %hook UTHomeViewController
 
 - (void)viewDidLoad {
+    %orig;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self uiRefresh];
+        [self doUiRefresh];
+    });
+}
+
+- (void)viewWillAppear:(BOOL)animated {
     %orig;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [self uiRefresh];
@@ -237,6 +372,31 @@ static void showAlert(NSString *title, NSString *message) {
 - (void)uiRefresh {
     %orig;
     
+    // 修改VIP标签
+    if (self.labelVipInfo) {
+        self.labelVipInfo.text = @"VIP会员 · 永久有效";
+        self.labelVipInfo.textColor = [UIColor colorWithRed:0.95 green:0.75 blue:0.2 alpha:1.0];
+    }
+    
+    // 修改线路标签
+    if (self.labelLineSelected) {
+        self.labelLineSelected.text = @"专属VIP线路";
+    }
+    
+    // 隐藏试用/额外信息
+    if (self.viewExtraInfo) {
+        self.viewExtraInfo.hidden = YES;
+    }
+    
+    // 修改今日流量显示
+    if (self.labelTrafficToday) {
+        self.labelTrafficToday.text = @"今日已用 0 MB";
+    }
+}
+
+- (void)doUiRefresh {
+    %orig;
+    
     if (self.labelVipInfo) {
         self.labelVipInfo.text = @"VIP会员 · 永久有效";
     }
@@ -244,14 +404,41 @@ static void showAlert(NSString *title, NSString *message) {
     if (self.labelLineSelected) {
         self.labelLineSelected.text = @"专属VIP线路";
     }
-    
-    if (self.viewExtraInfo) {
-        self.viewExtraInfo.hidden = YES;
-    }
+}
+
+- (void)userModelChanged:(id)sender {
+    %orig;
+    // 用户模型变化时重新修正
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self uiRefresh];
+    });
+}
+
+- (void)vpnStateChanged:(id)sender forceAnimation:(BOOL)force {
+    %orig;
+    // VPN状态变化时刷新UI
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self uiRefresh];
+    });
 }
 
 - (BOOL)showTrialOrPayInfoForFreeMember {
     return NO;
+}
+
+// 拦截加速按钮点击，确保VIP线路可用
+- (void)clickToAccelerate {
+    // 确保VIP数据已设置
+    UTUserModelManager *manager = [NSClassFromString(@"UTUserModelManager") sharedInstance];
+    if (manager && manager.model && manager.model.user) {
+        UTUser *user = manager.model.user;
+        if (![user.memberid isEqualToString:@"vip_ultimate"]) {
+            [user setMemberid:@"vip_ultimate"];
+            [user setMembertime:36500];
+            [user setLimitkbps:0];
+        }
+    }
+    %orig;
 }
 
 %end
@@ -260,38 +447,47 @@ static void showAlert(NSString *title, NSString *message) {
 
 - (void)viewDidLoad {
     %orig;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if (self.labelMemberInfo) {
-            self.labelMemberInfo.text = @"钻石会员 · 永久有效";
-        }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self uiRefresh];
     });
 }
 
-%end
+- (void)viewWillAppear:(BOOL)animated {
+    %orig;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self uiRefresh];
+    });
+}
 
-%hook UTGateModelManager
-
-- (BOOL)updateNormalGates:(id)gates {
-    BOOL result = %orig;
+- (void)uiRefresh {
+    %orig;
     
-    @try {
-        id gateModel = self.model;
-        if (gateModel && [gateModel respondsToSelector:@selector(setNormalGates:)]) {
-            NSMutableArray *normalGates = [NSMutableArray arrayWithArray:[gateModel valueForKey:@"normalGates"]];
-            // 添加VIP专属网关
-            id vipGate = [NSClassFromString(@"UTGate") new];
-            if (vipGate) {
-                [vipGate setValue:@"vip.accelerate.com" forKey:@"host"];
-                [vipGate setValue:@"VIP专属线路" forKey:@"name"];
-                [normalGates addObject:vipGate];
-                [gateModel setValue:normalGates forKey:@"normalGates"];
-            }
-        }
-    } @catch (NSException *exception) {
-        NSLog(@"UTGateModelManager exception: %@", exception);
+    if (self.labelMemberInfo) {
+        self.labelMemberInfo.text = @"钻石会员 · 永久有效";
+        self.labelMemberInfo.textColor = [UIColor colorWithRed:0.95 green:0.75 blue:0.2 alpha:1.0];
     }
     
-    return result;
+    if (self.labelId) {
+        NSString *originalId = self.labelId.text;
+        if (originalId && ![originalId hasSuffix:@" (VIP)"]) {
+            self.labelId.text = [originalId stringByAppendingString:@" (VIP)"];
+        }
+    }
+}
+
+- (void)doUiRefresh {
+    %orig;
+    
+    if (self.labelMemberInfo) {
+        self.labelMemberInfo.text = @"钻石会员 · 永久有效";
+    }
+}
+
+- (void)userModelChanged:(id)sender {
+    %orig;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self uiRefresh];
+    });
 }
 
 %end
@@ -305,16 +501,45 @@ static void showAlert(NSString *title, NSString *message) {
 %ctor {
     NSLog(@"========================================");
     NSLog(@"SpeedCN VIP Unlocker Loaded!");
-    NSLog(@"VIP功能已解锁");
+    NSLog(@"VIP功能已解锁 - 永久会员");
     NSLog(@"========================================");
     
     %init(UnlockVIP);
     
-    // 延迟触发UI刷新
+    // 延迟执行，确保所有类已加载
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        UIViewController *rootVC = getCurrentViewController();
-        if ([rootVC respondsToSelector:@selector(uiRefresh)]) {
-            [rootVC performSelector:@selector(uiRefresh)];
+        // 强制设置用户数据
+        UTUserModelManager *manager = [NSClassFromString(@"UTUserModelManager") sharedInstance];
+        if (manager) {
+            // 确保用户模型存在
+            if (!manager.model) {
+                UTUserModel *model = [[NSClassFromString(@"UTUserModel") alloc] init];
+                UTUser *user = [[NSClassFromString(@"UTUser") alloc] init];
+                [user setMemberid:@"vip_ultimate"];
+                [user setMembertime:36500];
+                [user setMemberdate:20991231];
+                [user setLimitkbps:0];
+                [user setLimitkbytes:0];
+                [user setDaykbytes:999999999];
+                [user setPoint:9999999];
+                [model setUser:user];
+                [manager setModel:model];
+            } else if (manager.model.user) {
+                UTUser *user = manager.model.user;
+                [user setMemberid:@"vip_ultimate"];
+                [user setMembertime:36500];
+                [user setMemberdate:20991231];
+                [user setLimitkbps:0];
+                [user setLimitkbytes:0];
+                [user setDaykbytes:999999999];
+                [user setPoint:9999999];
+            }
+            
+            // 保存到本地
+            [manager userModelWriteToUserData];
         }
+        
+        // 刷新UI
+        forceRefreshUI();
     });
 }
