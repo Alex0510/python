@@ -6,7 +6,7 @@
     <dict>
         <key>Bundles</key>
         <array>
-            <string>cloud.speedcn.speed.Speedcn</string>
+            <string>com.ywvision.liebaovpn</string>
         </array>
     </dict>
 </dict>
