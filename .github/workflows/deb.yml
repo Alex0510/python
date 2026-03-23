@@ -1,4 +1,4 @@
-name: Build DEB with Theos
+name: Build ${{ github.event.repository.name }} DEB
 
 on:
   push:
@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # 动态设置job名称
+    name: Build ${{ github.event.repository.name }} v${{ github.ref_name }}
 
     steps:
       - name: 检出代码
@@ -100,7 +102,6 @@ jobs:
           PACKAGE_NAME=""
           if [ -f "Makefile" ]; then
             # 提取 TWEAK_NAME 的值（支持 = 和 :=，支持引号）
-            # 示例：TWEAK_NAME = MyTweak 或 TWEAK_NAME := "MyTweak"
             RAW_NAME=$(grep -E '^TWEAK_NAME\s*[:=]\s*' Makefile | head -1 | sed -E 's/^TWEAK_NAME\s*[:=]\s*//; s/^"//; s/"$//; s/^'\''//; s/'\''$//')
             if [ -n "$RAW_NAME" ]; then
               PACKAGE_NAME="$RAW_NAME"
@@ -151,6 +152,7 @@ jobs:
 
       # ---------- 确定最终包名（优先级：Makefile TWEAK_NAME > plist CFBundleIdentifier > control Package > 仓库名） ----------
       - name: 确定最终包名
+        id: final_package
         run: |
           # 从步骤提取的包名
           PKG_FROM_MAKEFILE="${{ steps.extract_package.outputs.PACKAGE_NAME }}"
@@ -190,6 +192,7 @@ jobs:
           fi
           echo "最终包名: $PACKAGE_NAME"
           echo "PACKAGE_NAME=$PACKAGE_NAME" >> $GITHUB_ENV
+          echo "package_name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
 
       - name: 创建输出目录
         run: mkdir -p output
@@ -232,20 +235,32 @@ jobs:
             output/${{ env.PACKAGE_NAME }}-${{ env.VERSION }}.deb
             output/${{ env.PACKAGE_NAME }}-source.zip
           token: ${{ secrets.GITHUB_TOKEN }}
-          name: Release ${{ github.ref_name }}
+          name: "${{ env.PACKAGE_NAME }} ${{ env.VERSION }}"
+          body: |
+            ## ${{ env.PACKAGE_NAME }} v${{ env.VERSION }}
+            
+            ### 构建信息
+            - 包名: `${{ env.PACKAGE_NAME }}`
+            - 版本: `${{ env.VERSION }}`
+            - 架构: arm64
+            - 构建时间: ${{ github.event.head_commit.timestamp }}
+            
+            ### 文件列表
+            - `${{ env.PACKAGE_NAME }}-${{ env.VERSION }}.deb` - 插件安装包
+            - `${{ env.PACKAGE_NAME }}-source.zip` - 源码包
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 上传 .deb 包到 Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.PACKAGE_NAME }}-${{ env.VERSION }}.deb
+          name: ${{ env.PACKAGE_NAME }}-${{ env.VERSION }}
           path: output/${{ env.PACKAGE_NAME }}-${{ env.VERSION }}.deb
           if-no-files-found: error
 
       - name: 上传源码包到 Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.PACKAGE_NAME }}-source.zip
+          name: ${{ env.PACKAGE_NAME }}-source
           path: output/${{ env.PACKAGE_NAME }}-source.zip
           if-no-files-found: error
