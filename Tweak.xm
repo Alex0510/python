@@ -3,14 +3,15 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 
-// 根据实际类结构声明 - Swift 类
+// 根据实际类结构声明 - 修正返回类型
 @interface DDSettingVipCell : UITableViewCell
 @property (nonatomic, strong) UIView *backView;
 @property (nonatomic, strong) UIImageView *fomzImageView;
 @property (nonatomic, strong) UILabel *fomzLabel;
-- (void)initWithStyle:(long long)arg1 reuseIdentifier:(id)arg2;
-- (void)initWithCoder:(NSCoder *)coder;
-- (void).cxx_destruct;
+// 修正：使用 instancetype 而不是 void
+- (instancetype)initWithStyle:(long long)arg1 reuseIdentifier:(id)arg2;
+- (instancetype)initWithCoder:(NSCoder *)coder;
+// 移除 .cxx_destruct 声明（不需要声明）
 @end
 
 // 声明DDVipViewController类
@@ -84,46 +85,9 @@ static void replaced_setText(id self, SEL _cmd, NSString *text) {
     }
 }
 
-// Hook DDSettingVipCell - 增强版
-%hook DDSettingVipCell
-
-- (void)initWithStyle:(long long)arg1 reuseIdentifier:(id)arg2 {
-    %orig;
-    
-    // 延迟执行，确保视图完全加载
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        [self modifyVIPCell];
-    });
-}
-
-- (void)initWithCoder:(NSCoder *)coder {
-    %orig;
-    
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        [self modifyVIPCell];
-    });
-}
-
-- (void)layoutSubviews {
-    %orig;
-    [self modifyVIPCell];
-}
-
-- (void)modifyVIPCell {
-    // 修改 fomzLabel
-    if (self.fomzLabel) {
-        if (![self.fomzLabel.text isEqualToString:@"已升级 Fomz Pro"]) {
-            self.fomzLabel.text = @"已升级 Fomz Pro";
-            self.fomzLabel.textColor = [UIColor colorWithRed:0.2 green:0.6 blue:0.2 alpha:1.0];
-        }
-    }
-    
-    // 递归查找所有子视图
-    [self modifySubviews:self.subviews];
-}
-
-- (void)modifySubviews:(NSArray *)subviews {
-    for (UIView *subview in subviews) {
+// 辅助函数：递归修改视图
+static void modifySubviewsRecursively(UIView *view) {
+    for (UIView *subview in view.subviews) {
         if ([subview isKindOfClass:[UILabel class]]) {
             UILabel *label = (UILabel *)subview;
             if (label.text) {
@@ -153,9 +117,62 @@ static void replaced_setText(id self, SEL _cmd, NSString *text) {
         
         // 递归检查子视图
         if (subview.subviews.count > 0) {
-            [self modifySubviews:subview.subviews];
+            modifySubviewsRecursively(subview);
         }
     }
+}
+
+// Hook DDSettingVipCell
+%hook DDSettingVipCell
+
+- (instancetype)initWithStyle:(long long)arg1 reuseIdentifier:(id)arg2 {
+    self = %orig;
+    if (self) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            // 修改 fomzLabel
+            if (self.fomzLabel) {
+                if (![self.fomzLabel.text isEqualToString:@"已升级 Fomz Pro"]) {
+                    self.fomzLabel.text = @"已升级 Fomz Pro";
+                    self.fomzLabel.textColor = [UIColor colorWithRed:0.2 green:0.6 blue:0.2 alpha:1.0];
+                }
+            }
+            
+            // 递归修改所有子视图
+            modifySubviewsRecursively(self);
+        });
+    }
+    return self;
+}
+
+- (instancetype)initWithCoder:(NSCoder *)coder {
+    self = %orig;
+    if (self) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            // 修改 fomzLabel
+            if (self.fomzLabel) {
+                if (![self.fomzLabel.text isEqualToString:@"已升级 Fomz Pro"]) {
+                    self.fomzLabel.text = @"已升级 Fomz Pro";
+                    self.fomzLabel.textColor = [UIColor colorWithRed:0.2 green:0.6 blue:0.2 alpha:1.0];
+                }
+            }
+            
+            // 递归修改所有子视图
+            modifySubviewsRecursively(self);
+        });
+    }
+    return self;
+}
+
+- (void)layoutSubviews {
+    %orig;
+    
+    // 每次布局时检查并修改
+    if (self.fomzLabel && ![self.fomzLabel.text isEqualToString:@"已升级 Fomz Pro"]) {
+        self.fomzLabel.text = @"已升级 Fomz Pro";
+        self.fomzLabel.textColor = [UIColor colorWithRed:0.2 green:0.6 blue:0.2 alpha:1.0];
+    }
+    
+    modifySubviewsRecursively(self);
 }
 
 %end
@@ -169,34 +186,12 @@ static void replaced_setText(id self, SEL _cmd, NSString *text) {
     // 延迟执行多次确保UI更新
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [self updateVIPUI];
-        [self removeWatermarks];
+        modifySubviewsRecursively(self.view);
     });
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [self updateVIPUI];
-        [self removeWatermarks];
+        modifySubviewsRecursively(self.view);
     });
-}
-
-- (void)removeWatermarks {
-    // 递归查找并移除所有水印
-    [self removeWatermarksFromView:self.view];
-}
-
-- (void)removeWatermarksFromView:(UIView *)view {
-    for (UIView *subview in view.subviews) {
-        if ([subview isKindOfClass:[UILabel class]]) {
-            UILabel *label = (UILabel *)subview;
-            if (label.text && [label.text containsString:@"破解来源"]) {
-                label.text = @"";
-                label.hidden = YES;
-                NSLog(@"✅ Removed watermark from VIP view");
-            }
-        }
-        
-        if (subview.subviews.count > 0) {
-            [self removeWatermarksFromView:subview];
-        }
-    }
 }
 
 - (void)updateVIPUI {
