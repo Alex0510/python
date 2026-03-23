@@ -3,7 +3,7 @@
 #import <objc/runtime.h>
 
 // ============================================================
-// 类声明（仅声明需要hook的类）
+// 类声明
 // ============================================================
 
 @interface UTUser : NSObject
@@ -73,80 +73,7 @@ static const int VIP_DAYS = 36500;
 static const int VIP_DATE = 20991231;
 
 // ============================================================
-// 安全的UI刷新
-// ============================================================
-
-static void safeRefreshUI() {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        @try {
-            // 尝试获取当前视图控制器
-            UIViewController *rootVC = [UIApplication sharedApplication].keyWindow.rootViewController;
-            if ([rootVC isKindOfClass:[UITabBarController class]]) {
-                UITabBarController *tabBar = (UITabBarController *)rootVC;
-                for (UIViewController *vc in tabBar.viewControllers) {
-                    if ([vc isKindOfClass:NSClassFromString(@"UTHomeViewController")]) {
-                        UTHomeViewController *homeVC = (UTHomeViewController *)vc;
-                        if ([homeVC respondsToSelector:@selector(uiRefresh)]) {
-                            [homeVC uiRefresh];
-                        }
-                    }
-                    if ([vc isKindOfClass:NSClassFromString(@"UTMeViewController")]) {
-                        UTMeViewController *meVC = (UTMeViewController *)vc;
-                        if ([meVC respondsToSelector:@selector(uiRefresh)]) {
-                            [meVC uiRefresh];
-                        }
-                    }
-                }
-            }
-        } @catch (NSException *exception) {
-            NSLog(@"SpeedCN VIP Unlocker: UI refresh error - %@", exception);
-        }
-    });
-}
-
-// ============================================================
-// 安全的数据修正
-// ============================================================
-
-static void safeFixUserData(id manager) {
-    @try {
-        if (!manager) return;
-        
-        id model = [manager valueForKey:@"model"];
-        if (!model) return;
-        
-        id user = [model valueForKey:@"user"];
-        if (!user) return;
-        
-        // 设置VIP数据
-        if ([user respondsToSelector:@selector(setMemberid:)]) {
-            [user setValue:@"vip_ultimate" forKey:@"memberid"];
-        }
-        if ([user respondsToSelector:@selector(setMembertime:)]) {
-            [user setValue:@(VIP_DAYS) forKey:@"membertime"];
-        }
-        if ([user respondsToSelector:@selector(setMemberdate:)]) {
-            [user setValue:@(VIP_DATE) forKey:@"memberdate"];
-        }
-        if ([user respondsToSelector:@selector(setLimitkbps:)]) {
-            [user setValue:@(0.0f) forKey:@"limitkbps"];
-        }
-        if ([user respondsToSelector:@selector(setLimitkbytes:)]) {
-            [user setValue:@(0.0f) forKey:@"limitkbytes"];
-        }
-        if ([user respondsToSelector:@selector(setDaykbytes:)]) {
-            [user setValue:@(INFINITE_TRAFFIC) forKey:@"daykbytes"];
-        }
-        if ([user respondsToSelector:@selector(setPoint:)]) {
-            [user setValue:@(INFINITE_POINT) forKey:@"point"];
-        }
-    } @catch (NSException *exception) {
-        NSLog(@"SpeedCN VIP Unlocker: fix user data error - %@", exception);
-    }
-}
-
-// ============================================================
-// Hook实现 - 简化版本
+// Hook实现
 // ============================================================
 
 %group UnlockVIP
@@ -234,7 +161,7 @@ static void safeFixUserData(id manager) {
 
 %end
 
-// VPN模式 - 不强制修改状态，只修改设置
+// VPN模式
 %hook UTVpnModelManager
 
 - (BOOL)vpnGlobalMode {
@@ -265,7 +192,6 @@ static void safeFixUserData(id manager) {
 
 - (void)viewDidLoad {
     %orig;
-    // 延迟刷新UI，确保视图已加载
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         @try {
             [self uiRefresh];
@@ -330,7 +256,7 @@ static void safeFixUserData(id manager) {
 %end
 
 // ============================================================
-// 安全的初始化 - 只做必要的hook，不主动访问应用类
+// 初始化
 // ============================================================
 
 %ctor {
@@ -339,12 +265,9 @@ static void safeFixUserData(id manager) {
     NSLog(@"VIP功能已解锁");
     NSLog(@"========================================");
     
-    // 只初始化hook组，不主动访问应用类
     @try {
         %init(UnlockVIP);
     } @catch (NSException *exception) {
         NSLog(@"Failed to init hooks: %@", exception);
     }
-    
-    // 不主动刷新UI，让应用自己处理
 }
