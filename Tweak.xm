@@ -176,22 +176,24 @@
 
 %end
 
-// ========== 获取当前活动的场景窗口 (修复iOS 13+的keyWindow问题) ==========
-static UIWindow *getKeyWindow(void) {
+// ========== 获取第一个窗口 (不使用keyWindow) ==========
+static UIWindow *getFirstWindow(void) {
     if (@available(iOS 13.0, *)) {
         for (UIWindowScene *scene in [UIApplication sharedApplication].connectedScenes) {
             if (scene.activationState == UISceneActivationStateForegroundActive) {
                 for (UIWindow *window in scene.windows) {
-                    if (window.isKeyWindow) {
-                        return window;
-                    }
+                    return window;
                 }
             }
         }
-        return [UIApplication sharedApplication].windows.firstObject;
-    } else {
-        return [UIApplication sharedApplication].keyWindow;
     }
+    // iOS 12 and below
+    for (UIWindow *window in [UIApplication sharedApplication].windows) {
+        if (window.isKeyWindow) {
+            return window;
+        }
+    }
+    return [UIApplication sharedApplication].windows.firstObject;
 }
 
 // ========== 构造函数 ==========
@@ -206,7 +208,7 @@ static UIWindow *getKeyWindow(void) {
         [defaults setBool:YES forKey:@"ProUnlocked"];
         [defaults synchronize];
         
-        // 使用objc_msgSend设置 Store
+        // 设置 Store
         Class storeClass = objc_getClass("_TtC5Egern5Store");
         if (storeClass) {
             id store = nil;
@@ -261,15 +263,13 @@ static UIWindow *getKeyWindow(void) {
         // 发送通知
         [[NSNotificationCenter defaultCenter] postNotificationName:@"ProUnlockedNotification" object:nil];
         
-        // 刷新UI
-        UIWindow *keyWindow = getKeyWindow();
-        if (keyWindow) {
-            [keyWindow setNeedsLayout];
-            [keyWindow layoutIfNeeded];
-            UIViewController *rootVC = keyWindow.rootViewController;
-            if (rootVC) {
-                [rootVC setNeedsStatusBarAppearanceUpdate];
-                [rootVC.view setNeedsLayout];
+        // 简单刷新UI
+        UIWindow *window = getFirstWindow();
+        if (window) {
+            [window setNeedsLayout];
+            UIView *rootView = window.rootViewController.view;
+            if (rootView) {
+                [rootView setNeedsLayout];
             }
         }
         
