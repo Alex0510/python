@@ -1,4 +1,4 @@
-Package: cloud.eric.speed.Speedcn
+Package: cloud.eric.speed.speedcn
 Name: SpeedCNVIPUnlocker
 Depends: mobilesubstrate (>= 0.9.5000)
 Version: 1.0.0
