@@ -3,15 +3,14 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 
-// 声明DDSettingVipExpireCell类
-@interface DDSettingVipExpireCell : UITableViewCell
-@property (nonatomic, strong) UILabel *expireLabel;
-@property (nonatomic, strong) UILabel *tipsLabel;
-@property (nonatomic, strong) UILabel *fomzLabel;
+// 根据实际类结构声明
+@interface DDSettingVipCell : UITableViewCell
+@property (nonatomic, strong) UIView *backView;
 @property (nonatomic, strong) UIImageView *fomzImageView;
+@property (nonatomic, strong) UILabel *fomzLabel;
 @end
 
-// 声明DDVipViewController类 - 添加updateVIPUI方法声明
+// 声明DDVipViewController类
 @interface DDVipViewController : UIViewController
 @property (nonatomic, strong) NSString *monthPriceString;
 @property (nonatomic, strong) NSString *yearsPriceString;
@@ -22,9 +21,10 @@
 @property (nonatomic, strong) UIView *monthItemView;
 @property (nonatomic, strong) UIView *yearsItemView;
 @property (nonatomic, strong) UIView *foreverItemView;
+@property (nonatomic, strong) UILabel *payDesLabel;
 - (void)onPayButtonTouch;
 - (void)onRecoveryButtonTouch;
-- (void)updateVIPUI;  // 添加这个方法声明
+- (void)updateVIPUI;
 @end
 
 // 声明VIP管理类
@@ -34,13 +34,13 @@
 - (BOOL)isPro;
 - (BOOL)isFomzPro;
 - (id)vipExpireDate;
+- (id)vipInfo;
 @end
 
 // 保存原始方法指针
 static void (*original_setText)(id self, SEL _cmd, NSString *text);
 static BOOL isModifying = NO;
 
-// 新的setText实现 - 修复无限递归
 static void replaced_setText(id self, SEL _cmd, NSString *text) {
     if (isModifying) {
         original_setText(self, _cmd, text);
@@ -54,10 +54,7 @@ static void replaced_setText(id self, SEL _cmd, NSString *text) {
     if (text && [text containsString:@"到期时间"]) {
         shouldModify = YES;
         newText = @"到期时间: 2999年12月29日";
-    } else if (text && ([text containsString:@"Fomz"] || [text containsString:@"Pro"])) {
-        shouldModify = YES;
-        newText = @"已升级 Fomz Pro";
-    } else if (text && [text containsString:@"会员"]) {
+    } else if (text && ([text containsString:@"Fomz"] || [text containsString:@"Pro"] || [text containsString:@"会员"])) {
         shouldModify = YES;
         newText = @"已升级 Fomz Pro";
     }
@@ -71,20 +68,27 @@ static void replaced_setText(id self, SEL _cmd, NSString *text) {
     }
 }
 
-%hook DDSettingVipExpireCell
+// Hook DDSettingVipCell
+%hook DDSettingVipCell
 
 - (void)initWithStyle:(long long)arg1 reuseIdentifier:(id)arg2 {
     %orig;
     
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if (self.expireLabel) {
-            self.expireLabel.text = @"到期时间: 2999年12月29日";
-        }
-        if (self.tipsLabel) {
-            self.tipsLabel.text = @"已升级 Fomz Pro";
-        }
         if (self.fomzLabel) {
-            self.fomzLabel.text = @"PRO";
+            self.fomzLabel.text = @"已升级 Fomz Pro";
+        }
+        
+        // 查找并修改expireLabel（可能在subviews中）
+        for (UIView *subview in self.subviews) {
+            if ([subview isKindOfClass:[UILabel class]]) {
+                UILabel *label = (UILabel *)subview;
+                if (label.text && [label.text containsString:@"到期时间"]) {
+                    label.text = @"到期时间: 2999年12月29日";
+                } else if (label.text && [label.text containsString:@"Fomz"]) {
+                    label.text = @"已升级 Fomz Pro";
+                }
+            }
         }
     });
 }
@@ -92,21 +96,29 @@ static void replaced_setText(id self, SEL _cmd, NSString *text) {
 - (void)layoutSubviews {
     %orig;
     
-    if (self.expireLabel && ![self.expireLabel.text isEqualToString:@"到期时间: 2999年12月29日"]) {
-        self.expireLabel.text = @"到期时间: 2999年12月29日";
+    if (self.fomzLabel && ![self.fomzLabel.text isEqualToString:@"已升级 Fomz Pro"]) {
+        self.fomzLabel.text = @"已升级 Fomz Pro";
     }
-    if (self.tipsLabel && ![self.tipsLabel.text isEqualToString:@"已升级 Fomz Pro"]) {
-        self.tipsLabel.text = @"已升级 Fomz Pro";
+    
+    for (UIView *subview in self.subviews) {
+        if ([subview isKindOfClass:[UILabel class]]) {
+            UILabel *label = (UILabel *)subview;
+            if (label.text && [label.text containsString:@"到期时间"]) {
+                label.text = @"到期时间: 2999年12月29日";
+            }
+        }
     }
 }
 
 %end
 
+// Hook DDVipViewController
 %hook DDVipViewController
 
 - (void)viewDidLoad {
     %orig;
     
+    // 延迟执行多次确保UI更新
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [self updateVIPUI];
     });
@@ -138,11 +150,17 @@ static void replaced_setText(id self, SEL _cmd, NSString *text) {
     // 隐藏恢复按钮
     if (self.recoveryButton) {
         [self.recoveryButton setHidden:YES];
+        [self.recoveryButton setUserInteractionEnabled:NO];
     }
     
     // 修改提示文本
     if (self.contentLabel) {
         self.contentLabel.text = @"您已是永久Pro会员，享受全部功能";
+        self.contentLabel.textColor = [UIColor colorWithRed:0.2 green:0.6 blue:0.2 alpha:1.0];
+    }
+    
+    if (self.payDesLabel) {
+        self.payDesLabel.text = @"永久会员已激活";
     }
     
     // 禁用套餐选择
@@ -161,6 +179,7 @@ static void replaced_setText(id self, SEL _cmd, NSString *text) {
 }
 
 - (void)onPayButtonTouch {
+    // 完全拦截支付
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"提示" 
                                                                    message:@"您已是永久会员，无需重复购买" 
                                                             preferredStyle:UIAlertControllerStyleAlert];
@@ -169,6 +188,7 @@ static void replaced_setText(id self, SEL _cmd, NSString *text) {
 }
 
 - (void)onRecoveryButtonTouch {
+    // 拦截恢复购买，显示成功
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"恢复成功" 
                                                                    message:@"您的永久会员已恢复" 
                                                             preferredStyle:UIAlertControllerStyleAlert];
@@ -178,30 +198,46 @@ static void replaced_setText(id self, SEL _cmd, NSString *text) {
 
 %end
 
-// Hook VIP Manager
+// Hook DDVipManager - 关键！
 %hook DDVipManager
 
 + (instancetype)sharedManager {
     DDVipManager *manager = %orig;
+    NSLog(@"✅ DDVipManager sharedManager called");
     return manager;
 }
 
 - (BOOL)isVip {
+    NSLog(@"✅ isVip called - returning YES");
     return YES;
 }
 
 - (BOOL)isPro {
+    NSLog(@"✅ isPro called - returning YES");
     return YES;
 }
 
 - (BOOL)isFomzPro {
+    NSLog(@"✅ isFomzPro called - returning YES");
     return YES;
 }
 
 - (id)vipExpireDate {
+    NSDate *date = [NSDate dateWithTimeIntervalSince1970:946684800]; // 2000-01-01
+    NSLog(@"✅ vipExpireDate called - returning 2999-12-29");
     NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
     [formatter setDateFormat:@"yyyy-MM-dd"];
     return [formatter dateFromString:@"2999-12-29"];
+}
+
+- (id)vipInfo {
+    NSLog(@"✅ vipInfo called");
+    NSMutableDictionary *info = [NSMutableDictionary dictionary];
+    info[@"isVip"] = @YES;
+    info[@"isPro"] = @YES;
+    info[@"expireDate"] = @"2999-12-29";
+    info[@"vipType"] = @1;
+    return info;
 }
 
 %end
@@ -210,16 +246,18 @@ static void replaced_setText(id self, SEL _cmd, NSString *text) {
 %hook NSUserDefaults
 
 - (BOOL)boolForKey:(NSString *)defaultName {
-    NSArray *vipKeys = @[@"isVip", @"isPro", @"isFomzPro", @"isPremium", @"hasUnlockedPro"];
+    NSArray *vipKeys = @[@"isVip", @"isPro", @"isFomzPro", @"isPremium", @"hasUnlockedPro", @"vipEnabled", @"proEnabled"];
     if ([vipKeys containsObject:defaultName]) {
+        NSLog(@"✅ NSUserDefaults boolForKey:%@ - returning YES", defaultName);
         return YES;
     }
     return %orig;
 }
 
 - (id)objectForKey:(NSString *)defaultName {
-    NSArray *expireKeys = @[@"vipExpireDate", @"expireDate", @"proExpireDate"];
+    NSArray *expireKeys = @[@"vipExpireDate", @"expireDate", @"proExpireDate", @"vipExpiration"];
     if ([expireKeys containsObject:defaultName]) {
+        NSLog(@"✅ NSUserDefaults objectForKey:%@ - returning 2999-12-29", defaultName);
         return @"2999-12-29";
     }
     return %orig;
@@ -235,6 +273,26 @@ static void replaced_setText(id self, SEL _cmd, NSString *text) {
     return %orig;
 }
 
+- (void)setBool:(BOOL)value forKey:(NSString *)defaultName {
+    NSArray *vipKeys = @[@"isVip", @"isPro", @"isFomzPro"];
+    if ([vipKeys containsObject:defaultName]) {
+        NSLog(@"✅ Blocked setting %@ to %d - forcing YES", defaultName, value);
+        %orig(YES, defaultName);
+        return;
+    }
+    %orig(value, defaultName);
+}
+
+- (void)setObject:(id)value forKey:(NSString *)defaultName {
+    NSArray *expireKeys = @[@"vipExpireDate", @"expireDate"];
+    if ([expireKeys containsObject:defaultName]) {
+        NSLog(@"✅ Blocked setting %@ - forcing 2999-12-29", defaultName);
+        %orig(@"2999-12-29", defaultName);
+        return;
+    }
+    %orig(value, defaultName);
+}
+
 %end
 
 // Hook AppDelegate
@@ -243,14 +301,24 @@ static void replaced_setText(id self, SEL _cmd, NSString *text) {
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     BOOL result = %orig;
     
-    // 设置VIP状态
+    // 强制设置所有VIP相关的UserDefaults
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    [defaults setBool:YES forKey:@"isVip"];
-    [defaults setBool:YES forKey:@"isPro"];
-    [defaults setBool:YES forKey:@"isFomzPro"];
-    [defaults setObject:@"2999-12-29" forKey:@"vipExpireDate"];
+    
+    NSArray *vipKeys = @[@"isVip", @"isPro", @"isFomzPro", @"isPremium", @"hasUnlockedPro", @"vipEnabled", @"proEnabled"];
+    for (NSString *key in vipKeys) {
+        [defaults setBool:YES forKey:key];
+    }
+    
+    NSArray *expireKeys = @[@"vipExpireDate", @"expireDate", @"proExpireDate", @"vipExpiration"];
+    for (NSString *key in expireKeys) {
+        [defaults setObject:@"2999-12-29" forKey:key];
+    }
+    
     [defaults setInteger:1 forKey:@"vipType"];
+    [defaults setInteger:9999 forKey:@"vipLevel"];
     [defaults synchronize];
+    
+    NSLog(@"✅ Fomz Pro: All VIP settings applied");
     
     return result;
 }
@@ -259,15 +327,16 @@ static void replaced_setText(id self, SEL _cmd, NSString *text) {
 
 %ctor {
     @autoreleasepool {
-        // 设置UserDefaults
+        // 立即设置UserDefaults
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
         [defaults setBool:YES forKey:@"isVip"];
         [defaults setBool:YES forKey:@"isPro"];
         [defaults setBool:YES forKey:@"isFomzPro"];
         [defaults setObject:@"2999-12-29" forKey:@"vipExpireDate"];
+        [defaults setInteger:1 forKey:@"vipType"];
         [defaults synchronize];
         
-        // 安全地hook UILabel的setText方法
+        // Hook UILabel的setText方法
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
             Class labelClass = [UILabel class];
@@ -276,10 +345,11 @@ static void replaced_setText(id self, SEL _cmd, NSString *text) {
             if (originalMethod) {
                 original_setText = (void(*)(id, SEL, NSString*))method_getImplementation(originalMethod);
                 method_setImplementation(originalMethod, (IMP)replaced_setText);
-                NSLog(@"✅ Fomz Pro Tweak Loaded - UILabel hooked");
             }
         });
         
-        NSLog(@"✅ Fomz Pro Tweak Loaded Successfully");
+        NSLog(@"✅ Fomz Pro Tweak Loaded - All VIP features unlocked");
+        NSLog(@"✅ Bundle ID: com.imendon.fomz");
+        NSLog(@"✅ VIP status forced to YES");
     }
 }
