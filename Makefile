@@ -8,7 +8,7 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = liebaovpnVIPUnlocker
 
-liebaovpnVIPUnlocker_FILES = Tweak.x
+liebaovpnVIPUnlocker_FILES = Tweak.xm
 liebaovpnVIPUnlocker_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
 liebaovpnVIPUnlocker_FRAMEWORKS = UIKit Foundation
 
