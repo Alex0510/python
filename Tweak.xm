@@ -14,6 +14,7 @@ static NSString * const kAESIV = @"MLRzB6w+wY136832";
 + (NSString *)decryptString:(NSString *)base64String key:(NSString *)key iv:(NSString *)iv;
 + (NSDictionary *)decryptAndParseJSON:(NSString *)base64String;
 + (NSString *)encryptString:(NSString *)plainText key:(NSString *)key iv:(NSString *)iv;
++ (NSString *)convertDictionaryToJSONString:(NSDictionary *)dict;
 @end
 
 @implementation AESDecryptor
@@ -132,7 +133,7 @@ static NSString * const kAESIV = @"MLRzB6w+wY136832";
 #pragma mark - 辅助类
 @interface VIPUnlockerHelper : NSObject
 + (void)forceVIPStatus;
-+ (void)updateVIPDisplayForViewController:(UIViewController *)vc;
++ (void)updateVIPDisplayForViewController:(id)vc;
 + (NSDictionary *)modifyVIPInResponseData:(NSDictionary *)responseData;
 + (void)modifyLabelsInView:(UIView *)view;
 @end
@@ -189,11 +190,13 @@ static NSString * const kAESIV = @"MLRzB6w+wY136832";
     return modifiedData;
 }
 
-+ (void)updateVIPDisplayForViewController:(UIViewController *)vc {
++ (void)updateVIPDisplayForViewController:(id)vc {
     if (!vc) return;
     
-    // 检查是否是账户页面 - 使用字符串类名避免前向声明问题
-    if ([NSStringFromClass([vc class]) isEqualToString:@"SettingAccountVC"]) {
+    NSString *className = NSStringFromClass([vc class]);
+    
+    // 检查是否是账户页面
+    if ([className isEqualToString:@"SettingAccountVC"]) {
         // 使用KVC获取标签
         UILabel *expiredLabel = [vc valueForKey:@"lblExpiredDate"];
         if (expiredLabel && [expiredLabel isKindOfClass:[UILabel class]]) {
@@ -212,8 +215,8 @@ static NSString * const kAESIV = @"MLRzB6w+wY136832";
         }
     }
     
-    // 检查是否是主页 - 使用字符串类名
-    if ([NSStringFromClass([vc class]) isEqualToString:@"HomeVC"]) {
+    // 检查是否是主页
+    if ([className isEqualToString:@"HomeVC"]) {
         UILabel *vipLabel = [vc valueForKey:@"lblVipMember"];
         if (vipLabel && [vipLabel isKindOfClass:[UILabel class]]) {
             vipLabel.text = @"VIP会员";
@@ -222,10 +225,14 @@ static NSString * const kAESIV = @"MLRzB6w+wY136832";
         }
     }
     
-    [self modifyLabelsInView:vc.view];
+    if ([vc respondsToSelector:@selector(view)]) {
+        [self modifyLabelsInView:[vc valueForKey:@"view"]];
+    }
 }
 
 + (void)modifyLabelsInView:(UIView *)view {
+    if (!view) return;
+    
     for (UIView *subview in view.subviews) {
         if ([subview isKindOfClass:[UILabel class]]) {
             UILabel *label = (UILabel *)subview;
@@ -233,7 +240,8 @@ static NSString * const kAESIV = @"MLRzB6w+wY136832";
             
             if ([text containsString:@"購買VIP"] || 
                 [text containsString:@"购买VIP"] ||
-                [text containsString:@"开通VIP"]) {
+                [text containsString:@"开通VIP"] ||
+                [text containsString:@"立即购买"]) {
                 label.text = @"永久有效";
                 label.textColor = [UIColor colorWithRed:0.0 green:0.6 blue:0.0 alpha:1.0];
                 NSLog(@"[VIPUnlocker] Changed label from '%@' to '永久有效'", text);
@@ -245,21 +253,9 @@ static NSString * const kAESIV = @"MLRzB6w+wY136832";
 
 @end
 
-#pragma mark - HTTPRequest 类定义
+#pragma mark - HTTPRequest 类接口
 @interface HTTPRequest : NSObject
 - (void)successHandler:(void (^)(NSHTTPURLResponse *, id))handler;
-- (NSString *)convertDictionaryToJSONString:(NSDictionary *)dict;
-@end
-
-// 为HTTPRequest添加category来添加方法
-@interface HTTPRequest (VIPUnlocker)
-- (NSString *)convertDictionaryToJSONString:(NSDictionary *)dict;
-@end
-
-@implementation HTTPRequest (VIPUnlocker)
-- (NSString *)convertDictionaryToJSONString:(NSDictionary *)dict {
-    return [AESDecryptor convertDictionaryToJSONString:dict];
-}
 @end
 
 #pragma mark - UserInfo Hook
@@ -388,11 +384,11 @@ static NSString * const kAESIV = @"MLRzB6w+wY136832";
         // 遍历tabbar查找所有页面
         if ([rootVC isKindOfClass:[UITabBarController class]]) {
             UITabBarController *tabBar = (UITabBarController *)rootVC;
-            for (UIViewController *vc in tabBar.viewControllers) {
+            for (id vc in tabBar.viewControllers) {
                 [VIPUnlockerHelper updateVIPDisplayForViewController:vc];
                 if ([vc isKindOfClass:[UINavigationController class]]) {
                     UINavigationController *nav = (UINavigationController *)vc;
-                    for (UIViewController *navVC in nav.viewControllers) {
+                    for (id navVC in nav.viewControllers) {
                         [VIPUnlockerHelper updateVIPDisplayForViewController:navVC];
                     }
                 }
