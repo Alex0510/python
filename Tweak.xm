@@ -1,31 +1,31 @@
-// EgernProUnlock.xm
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
-#import <dlfcn.h>
 
-%hook Store
+// ========== Store 类 ==========
+%hook _TtC5Egern5Store
 
-// 修改Store类中的_isProUnlocked属性，始终返回YES
 - (BOOL)_isProUnlocked {
     return YES;
 }
 
-// 如果存在isProUnlocked方法
 - (BOOL)isProUnlocked {
     return YES;
 }
 
-// 如果存在proUnlocked方法
 - (BOOL)proUnlocked {
+    return YES;
+}
+
+- (BOOL)isPro {
     return YES;
 }
 
 %end
 
-%hook LicenseValidator
+// ========== LicenseValidator 类 ==========
+%hook _TtC5Egern16LicenseValidator
 
-// 修改许可证验证结果，始终返回有效
 - (BOOL)validateLicense {
     return YES;
 }
@@ -38,57 +38,33 @@
     return YES;
 }
 
-%end
-
-%hook GetProViewController
-
-// 修改GetProViewController，使其看起来已经购买
-- (void)viewDidLoad {
-    %orig;
-    // 添加标签显示已解锁
-    UILabel *unlockedLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 100, self.view.frame.size.width, 50)];
-    unlockedLabel.text = @"Pro Features Unlocked";
-    unlockedLabel.textAlignment = NSTextAlignmentCenter;
-    unlockedLabel.textColor = [UIColor greenColor];
-    unlockedLabel.font = [UIFont boldSystemFontOfSize:18];
-    [self.view addSubview:unlockedLabel];
-    
-    // 隐藏购买按钮
-    for (UIView *subview in self.view.subviews) {
-        if ([subview isKindOfClass:NSClassFromString(@"UIButton")]) {
-            UIButton *button = (UIButton *)subview;
-            if ([button.titleLabel.text containsString:@"Unlock"] || 
-                [button.titleLabel.text containsString:@"Purchase"]) {
-                button.hidden = YES;
-            }
-        }
-    }
+- (BOOL)hasValidLicense {
+    return YES;
 }
 
 %end
 
-// 针对AppStorage结构体中的_isProUnlocked属性
-%hook AppStorage
+// ========== KeyValueStore 类 ==========
+%hook _TtC5Egern13KeyValueStore
 
-// Hook NSUserDefaults相关方法，确保返回正确的值
-- (id)objectForKey:(NSString *)key {
-    if ([key containsString:@"pro"] || [key containsString:@"Pro"] || 
-        [key containsString:@"unlock"] || [key containsString:@"Unlock"]) {
-        if ([key isEqualToString:@"isProUnlocked"] || 
-            [key isEqualToString:@"proUnlocked"] ||
-            [key isEqualToString:@"ProUnlocked"]) {
+- (id)objectForKey:(id)key {
+    NSString *keyStr = [NSString stringWithFormat:@"%@", key];
+    if ([keyStr containsString:@"pro"] || [keyStr containsString:@"Pro"] || 
+        [keyStr containsString:@"unlock"] || [keyStr containsString:@"Unlock"]) {
+        if ([keyStr isEqualToString:@"isProUnlocked"] || 
+            [keyStr isEqualToString:@"proUnlocked"]) {
             return @YES;
         }
     }
     return %orig;
 }
 
-- (BOOL)boolForKey:(NSString *)key {
-    if ([key containsString:@"pro"] || [key containsString:@"Pro"] || 
-        [key containsString:@"unlock"] || [key containsString:@"Unlock"]) {
-        if ([key isEqualToString:@"isProUnlocked"] || 
-            [key isEqualToString:@"proUnlocked"] ||
-            [key isEqualToString:@"ProUnlocked"]) {
+- (BOOL)boolForKey:(id)key {
+    NSString *keyStr = [NSString stringWithFormat:@"%@", key];
+    if ([keyStr containsString:@"pro"] || [keyStr containsString:@"Pro"] || 
+        [keyStr containsString:@"unlock"] || [keyStr containsString:@"Unlock"]) {
+        if ([keyStr isEqualToString:@"isProUnlocked"] || 
+            [keyStr isEqualToString:@"proUnlocked"]) {
             return YES;
         }
     }
@@ -97,6 +73,7 @@
 
 %end
 
+// ========== NSUserDefaults ==========
 %hook NSUserDefaults
 
 - (BOOL)boolForKey:(NSString *)key {
@@ -123,32 +100,29 @@
     return %orig;
 }
 
-%end
-
-// 如果存在SettingsViewController，修改Pro相关设置
-%hook SettingsViewController
-
-- (void)viewDidLoad {
-    %orig;
-    // 禁用任何Pro限制的检查
-    // 确保所有Pro功能选项可见
-    // 可以通过遍历视图来启用被禁用的Pro功能
-    [self performSelector:@selector(enableProFeatures) withObject:nil afterDelay:0.5];
-}
-
-- (void)enableProFeatures {
-    // 启用所有可能被禁用的Pro功能
-    // 遍历所有tableview cells，启用Pro功能
-    UITableView *tableView = [self valueForKey:@"tableView"];
-    if (tableView) {
-        [tableView reloadData];
+- (void)setBool:(BOOL)value forKey:(NSString *)key {
+    if ([key containsString:@"pro"] || [key containsString:@"Pro"] || 
+        [key containsString:@"unlock"] || [key containsString:@"Unlock"]) {
+        value = YES;
     }
+    %orig;
+}
+
+- (void)setObject:(id)value forKey:(NSString *)key {
+    if ([key containsString:@"pro"] || [key containsString:@"Pro"] || 
+        [key containsString:@"unlock"] || [key containsString:@"Unlock"]) {
+        if ([key isEqualToString:@"isProUnlocked"] || 
+            [key isEqualToString:@"proUnlocked"]) {
+            value = @YES;
+        }
+    }
+    %orig;
 }
 
 %end
 
-// 修改Preferences类，确保Pro功能可用
-%hook Preferences
+// ========== Preferences 类 ==========
+%hook _TtC11EgernCommon11Preferences
 
 - (BOOL)isPro {
     return YES;
@@ -158,35 +132,181 @@
     return YES;
 }
 
+- (BOOL)proEnabled {
+    return YES;
+}
+
 %end
 
-// 初始化函数
-%ctor {
-    NSLog(@"Egern Pro Unlock dylib loaded successfully!");
+// ========== GetProViewController - 使用performSelector避免编译错误 ==========
+%hook _TtC5Egern20GetProViewController
+
+- (void)viewDidLoad {
+    %orig;
     
-    // 使用dispatch_async确保在主线程执行
     dispatch_async(dispatch_get_main_queue(), ^{
-        // 发送通知，告知应用Pro已解锁
-        [[NSNotificationCenter defaultCenter] postNotificationName:@"ProUnlockedNotification" object:nil];
+        // 使用performSelector获取view
+        UIView *view = [self performSelector:@selector(view)];
+        if (view) {
+            UILabel *unlockedLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 100, view.frame.size.width, 50)];
+            unlockedLabel.text = @"✓ Pro Features Unlocked";
+            unlockedLabel.textAlignment = NSTextAlignmentCenter;
+            unlockedLabel.textColor = [UIColor systemGreenColor];
+            unlockedLabel.font = [UIFont boldSystemFontOfSize:18];
+            unlockedLabel.tag = 9999;
+            [view addSubview:unlockedLabel];
+            
+            // 隐藏购买按钮
+            [self hidePurchaseButtons];
+            
+            // 自动返回
+            [self performSelector:@selector(dismissViewControllerAnimated:completion:) withObject:@YES afterDelay:1.0];
+        }
+    });
+}
+
+- (void)hidePurchaseButtons {
+    UIView *view = [self performSelector:@selector(view)];
+    if (view) {
+        for (UIView *subview in view.subviews) {
+            if ([subview isKindOfClass:[UIButton class]]) {
+                UIButton *button = (UIButton *)subview;
+                NSString *title = button.titleLabel.text;
+                if (title && ([title containsString:@"Unlock"] || 
+                    [title containsString:@"Purchase"] ||
+                    [title containsString:@"Buy"] ||
+                    [title containsString:@"Restore"])) {
+                    button.hidden = YES;
+                    button.enabled = NO;
+                }
+            }
+        }
+    }
+}
+
+%end
+
+// ========== SettingsViewController - 移除有问题的代码 ==========
+%hook _TtC5Egern22SettingsViewController
+
+- (void)viewDidLoad {
+    %orig;
+    
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        // 使用KVC设置可能的pro属性
+        @try {
+            [self setValue:@YES forKey:@"isPro"];
+            [self setValue:@YES forKey:@"proUnlocked"];
+            [self setValue:@YES forKey:@"_isProUnlocked"];
+        } @catch (NSException *e) {
+            // 忽略错误
+        }
         
-        // 尝试获取Store实例并设置pro状态
+        // 刷新表格
+        UITableView *tableView = [self valueForKey:@"tableView"];
+        if (tableView) {
+            [tableView reloadData];
+        }
+    });
+}
+
+%end
+
+// ========== 拦截许可证验证请求 ==========
+%hook NSURLSession
+
+- (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *error))completionHandler {
+    NSString *urlString = request.URL.absoluteString;
+    
+    if ([urlString containsString:@"license"] || 
+        [urlString containsString:@"verify"] ||
+        [urlString containsString:@"validate"] ||
+        [urlString containsString:@"pro"] ||
+        [urlString containsString:@"unlock"]) {
+        
+        NSData *mockData = [@"{\"status\":\"active\",\"type\":\"pro\",\"valid\":true,\"expires\":null}" dataUsingEncoding:NSUTF8StringEncoding];
+        NSHTTPURLResponse *mockResponse = [[NSHTTPURLResponse alloc] initWithURL:request.URL 
+                                                                      statusCode:200 
+                                                                     HTTPVersion:@"HTTP/1.1" 
+                                                                    headerFields:@{@"Content-Type": @"application/json"}];
+        if (completionHandler) {
+            completionHandler(mockData, mockResponse, nil);
+        }
+        return nil;
+    }
+    
+    return %orig;
+}
+
+%end
+
+// ========== 拦截可能的Pro功能检查方法 ==========
+%hook UIApplication
+
+- (BOOL)canPerformAction:(SEL)action withSender:(id)sender {
+    // 允许所有Pro功能
+    return YES;
+}
+
+%end
+
+// ========== 初始化 ==========
+%ctor {
+    NSLog(@"========================================");
+    NSLog(@"Egern Pro Unlock loaded successfully!");
+    NSLog(@"========================================");
+    
+    dispatch_async(dispatch_get_main_queue(), ^{
+        // 设置NSUserDefaults
+        NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+        [defaults setBool:YES forKey:@"isProUnlocked"];
+        [defaults setBool:YES forKey:@"proUnlocked"];
+        [defaults setBool:YES forKey:@"ProUnlocked"];
+        [defaults synchronize];
+        
+        // 尝试直接设置Store
         Class storeClass = NSClassFromString(@"_TtC5Egern5Store");
         if (storeClass) {
-            id storeInstance = [storeClass performSelector:@selector(shared)];
+            id storeInstance = nil;
+            if ([storeClass respondsToSelector:@selector(shared)]) {
+                storeInstance = [storeClass performSelector:@selector(shared)];
+            } else if ([storeClass respondsToSelector:@selector(sharedInstance)]) {
+                storeInstance = [storeClass performSelector:@selector(sharedInstance)];
+            }
             if (storeInstance) {
-                [storeInstance setValue:@YES forKey:@"_isProUnlocked"];
-                [storeInstance setValue:@YES forKey:@"isProUnlocked"];
+                @try {
+                    [storeInstance setValue:@YES forKey:@"_isProUnlocked"];
+                    [storeInstance setValue:@YES forKey:@"isProUnlocked"];
+                    [storeInstance setValue:@YES forKey:@"proUnlocked"];
+                    [storeInstance setValue:@YES forKey:@"isPro"];
+                    NSLog(@"✓ Store pro status set");
+                } @catch (NSException *e) {
+                    NSLog(@"Failed to set store: %@", e);
+                }
             }
         }
         
-        // 尝试获取AppStorage实例
-        Class appStorageClass = NSClassFromString(@"_TtC5Egern13KeyValueStore");
-        if (appStorageClass) {
-            id storageInstance = [appStorageClass performSelector:@selector(shared)];
-            if (storageInstance) {
-                [storageInstance setValue:@YES forKey:@"isProUnlocked"];
-                [storageInstance setValue:@YES forKey:@"proUnlocked"];
+        // 尝试设置Preferences
+        Class prefsClass = NSClassFromString(@"_TtC11EgernCommon11Preferences");
+        if (prefsClass) {
+            id prefsInstance = nil;
+            if ([prefsClass respondsToSelector:@selector(shared)]) {
+                prefsInstance = [prefsClass performSelector:@selector(shared)];
+            } else if ([prefsClass respondsToSelector:@selector(standardUserDefaults)]) {
+                prefsInstance = [prefsClass performSelector:@selector(standardUserDefaults)];
+            }
+            if (prefsInstance) {
+                @try {
+                    [prefsInstance setValue:@YES forKey:@"isPro"];
+                    [prefsInstance setValue:@YES forKey:@"proUnlocked"];
+                    NSLog(@"✓ Preferences pro status set");
+                } @catch (NSException *e) {
+                    NSLog(@"Failed to set preferences: %@", e);
+                }
             }
         }
+        
+        // 发送通知
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"ProUnlockedNotification" object:nil];
     });
 }
