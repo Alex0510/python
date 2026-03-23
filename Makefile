@@ -1,7 +1,7 @@
 export THEOS=/home/runner/theos
 export SDKVERSION=15.0
 export TARGET = iphone:clang:latest:11.0
-export ARCHS = arm64
+export ARCHS = arm64 arm64e
 
 include $(THEOS)/makefiles/common.mk
 
