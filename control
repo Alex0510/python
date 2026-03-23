@@ -1,5 +1,5 @@
-Package: com.eric.fomz
-Name: FomzPro
+Package: cloud.eric.speed.Speedcn
+Name: SpeedCNVIPUnlocker
 Depends: mobilesubstrate (>= 0.9.5000)
 Version: 1.0.0
 Architecture: iphoneos-arm
