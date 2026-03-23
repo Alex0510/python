@@ -1,16 +1,13 @@
-export THEOS=/home/runner/theos
-export SDKVERSION=14.5
-export TARGET = iphone:clang:latest:11.0
-export ARCHS = arm64
-
-export ADDITIONAL_CFLAGS = -Wno-deprecated-declarations -Wno-deprecated
+# 在Makefile中
+ARCHS = arm64 arm64e
+TARGET = iphone:clang:latest:14.0
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = SpeedCNVIPUnlocker
+TWEAK_NAME = liebaovpnVIPUnlocker
 
-SpeedCNVIPUnlocker_FILES = Tweak.xm
-SpeedCNVIPUnlocker_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -Wno-deprecated -Wno-implicit-const-int-float-conversion
-SpeedCNVIPUnlocker_FRAMEWORKS = UIKit Foundation
+liebaovpnVIPUnlocker_FILES = Tweak.x
+liebaovpnVIPUnlocker_CFLAGS = -fobjc-arc
+liebaovpnVIPUnlocker_FRAMEWORKS = UIKit
 
-include $(THEOS)/makefiles/tweak.mk
+include $(THEOS_MAKE_PATH)/tweak.mk
