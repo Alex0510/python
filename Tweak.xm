@@ -53,7 +53,7 @@
 @interface UTHomeViewController : UIViewController
 @property (nonatomic, strong) UILabel *labelVipInfo;
 @property (nonatomic, strong) UILabel *labelLineSelected;
-@property (nonatomic, strong) UILabel *labelTrafficToday;  // 今日流量标签
+@property (nonatomic, strong) UILabel *labelTrafficToday;
 @property (nonatomic, strong) UIView *viewExtraInfo;
 - (void)uiRefresh;
 - (BOOL)showTrialOrPayInfoForFreeMember;
@@ -65,10 +65,9 @@
 @end
 
 // ============================================================
-// 常量定义
+// 常量定义 - 只定义实际使用的常量
 // ============================================================
 
-static const float INFINITE_TRAFFIC = 999999999.0f;
 static const float INFINITE_POINT = 9999999.0f;
 static const int VIP_DAYS = 36500;
 static const int VIP_DATE = 20991231;
@@ -79,7 +78,7 @@ static const int VIP_DATE = 20991231;
 
 %group UnlockVIP
 
-// 核心VIP判断 - 只修改VIP状态，不修改流量
+// 核心VIP判断
 %hook UTUserModelManager
 
 - (BOOL)isVip {
@@ -108,7 +107,7 @@ static const int VIP_DATE = 20991231;
 
 %end
 
-// 用户数据 - 只修改VIP相关数据，不修改流量限制
+// 用户数据 - 只修改VIP相关数据
 %hook UTUser
 
 - (int)membertime {
@@ -119,9 +118,10 @@ static const int VIP_DATE = 20991231;
     return VIP_DATE;
 }
 
-// 不修改limitkbps - 保持原样，让应用自己计算速度限制
-// 不修改limitkbytes - 保持原样
-// 不修改daykbytes - 保持原样，让应用自己统计每日流量
+// 不修改流量相关属性
+// - limitkbps 保持原样
+// - limitkbytes 保持原样  
+// - daykbytes 保持原样
 
 - (float)point {
     return INFINITE_POINT;
@@ -180,7 +180,7 @@ static const int VIP_DATE = 20991231;
 
 %end
 
-// 首页UI修改 - 只修改VIP相关文字，不修改流量显示
+// 首页UI修改
 %hook UTHomeViewController
 
 - (void)viewDidLoad {
@@ -198,7 +198,6 @@ static const int VIP_DATE = 20991231;
     %orig;
     
     @try {
-        // 只修改VIP相关的文字，不修改流量
         if (self.labelVipInfo) {
             self.labelVipInfo.text = @"VIP会员 · 永久有效";
         }
@@ -208,9 +207,7 @@ static const int VIP_DATE = 20991231;
         if (self.viewExtraInfo) {
             self.viewExtraInfo.hidden = YES;
         }
-        
-        // 注意：不修改 labelTrafficToday 的文字，让应用自己显示真实流量
-        // 如果应用自己会显示流量，我们不应该覆盖它
+        // 不修改 labelTrafficToday，让应用显示真实流量
     } @catch (NSException *e) {
         NSLog(@"UI refresh error: %@", e);
     }
