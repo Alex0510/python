@@ -37,6 +37,12 @@
 - (id)vipInfo;
 @end
 
+// 声明 AppDelegate
+@interface AppDelegate : UIResponder <UIApplicationDelegate>
+@property (strong, nonatomic) UIWindow *window;
+- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions;
+@end
+
 // 保存原始方法指针
 static void (*original_setText)(id self, SEL _cmd, NSString *text);
 static BOOL isModifying = NO;
@@ -223,7 +229,7 @@ static void replaced_setText(id self, SEL _cmd, NSString *text) {
 }
 
 - (id)vipExpireDate {
-    NSDate *date = [NSDate dateWithTimeIntervalSince1970:946684800]; // 2000-01-01
+    // 修复：移除未使用的 date 变量
     NSLog(@"✅ vipExpireDate called - returning 2999-12-29");
     NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
     [formatter setDateFormat:@"yyyy-MM-dd"];
