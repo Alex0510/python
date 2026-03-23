@@ -4,11 +4,11 @@
 #import <objc/runtime.h>
 #import <CommonCrypto/CommonCrypto.h>
 
-// AES密钥和IV（从你的信息中获取）
+// AES密钥和IV
 static NSString * const kAESKey = @"!eRT8&^&-v+t-z2vC2fX9p^u2pDCV_Qc";
 static NSString * const kAESIV = @"MLRzB6w+wY136832";
 
-// AES解密辅助类
+#pragma mark - AES解密类
 @interface AESDecryptor : NSObject
 + (NSData *)AES128CBCDecrypt:(NSData *)data key:(NSString *)key iv:(NSString *)iv;
 + (NSString *)decryptString:(NSString *)base64String key:(NSString *)key iv:(NSString *)iv;
@@ -117,36 +117,24 @@ static NSString * const kAESIV = @"MLRzB6w+wY136832";
     return nil;
 }
 
++ (NSString *)convertDictionaryToJSONString:(NSDictionary *)dict {
+    if (!dict) return @"{}";
+    NSError *error;
+    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:dict options:0 error:&error];
+    if (jsonData && !error) {
+        return [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+    }
+    return @"{}";
+}
+
 @end
 
-// 设置账户页面类
-@interface SettingAccountVC : UIViewController
-@property (nonatomic, strong) UILabel *lblExpiredDate;
-@property (nonatomic, strong) UILabel *lblUserName;
-@property (nonatomic, strong) UIButton *btnPurchaseVIP;
-- (void)viewWillAppear:(BOOL)animated;
-- (void)viewDidLoad;
-- (void)updateVIPInfo;
-@end
-
-// 用户信息类
-@interface UserInfo : NSObject
-@property (nonatomic, assign) long long vipLevel;
-@property (nonatomic, assign) long long validateTime;
-@property (nonatomic, copy) NSString *expireDate;
-@end
-
-// AppDelegate
-@interface AppDelegate : UIResponder
-@property (nonatomic, strong) UIWindow *window;
-@property (nonatomic, strong) id userInfo;
-@end
-
-// 辅助类
+#pragma mark - 辅助类
 @interface VIPUnlockerHelper : NSObject
 + (void)forceVIPStatus;
 + (void)updateVIPDisplayForViewController:(UIViewController *)vc;
 + (NSDictionary *)modifyVIPInResponseData:(NSDictionary *)responseData;
++ (void)modifyLabelsInView:(UIView *)view;
 @end
 
 @implementation VIPUnlockerHelper
@@ -154,7 +142,6 @@ static NSString * const kAESIV = @"MLRzB6w+wY136832";
 + (void)forceVIPStatus {
     NSLog(@"[VIPUnlocker] ===== Forcing VIP status =====");
     
-    // 强制设置VIP状态到UserDefaults
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     [defaults setBool:YES forKey:@"isVIPUser"];
     [defaults setObject:@(999) forKey:@"vipLevel"];
@@ -162,15 +149,15 @@ static NSString * const kAESIV = @"MLRzB6w+wY136832";
     [defaults setObject:@(4102444800) forKey:@"expireTimestamp"];
     [defaults synchronize];
     
-    // 尝试修改AppDelegate中的userInfo
-    AppDelegate *appDelegate = (AppDelegate *)[UIApplication sharedApplication].delegate;
+    // 尝试通过AppDelegate修改userInfo
+    id appDelegate = [UIApplication sharedApplication].delegate;
     if (appDelegate) {
         id userInfo = [appDelegate valueForKey:@"userInfo"];
         if (userInfo) {
             [userInfo setValue:@(999) forKey:@"vipLevel"];
             [userInfo setValue:@(4102444800) forKey:@"validateTime"];
             [userInfo setValue:@"永久有效" forKey:@"expireDate"];
-            NSLog(@"[VIPUnlocker] Modified existing userInfo");
+            NSLog(@"[VIPUnlocker] Modified userInfo");
         }
     }
     
@@ -182,7 +169,7 @@ static NSString * const kAESIV = @"MLRzB6w+wY136832";
     
     NSMutableDictionary *modifiedData = [responseData mutableCopy];
     
-    // 修改data字段中的VIP信息
+    // 修改data字段
     id dataField = modifiedData[@"data"];
     if ([dataField isKindOfClass:[NSDictionary class]]) {
         NSMutableDictionary *dataDict = [dataField mutableCopy];
@@ -194,16 +181,10 @@ static NSString * const kAESIV = @"MLRzB6w+wY136832";
         NSLog(@"[VIPUnlocker] Modified VIP fields in data");
     }
     
-    // 修改根级别的VIP字段
-    if (modifiedData[@"vipLevel"]) {
-        [modifiedData setValue:@(999) forKey:@"vipLevel"];
-    }
-    if (modifiedData[@"validateTime"]) {
-        [modifiedData setValue:@(4102444800) forKey:@"validateTime"];
-    }
-    if (modifiedData[@"expireDate"]) {
-        [modifiedData setValue:@"永久有效" forKey:@"expireDate"];
-    }
+    // 修改根级别字段
+    if (modifiedData[@"vipLevel"]) [modifiedData setValue:@(999) forKey:@"vipLevel"];
+    if (modifiedData[@"validateTime"]) [modifiedData setValue:@(4102444800) forKey:@"validateTime"];
+    if (modifiedData[@"expireDate"]) [modifiedData setValue:@"永久有效" forKey:@"expireDate"];
     
     return modifiedData;
 }
@@ -211,11 +192,11 @@ static NSString * const kAESIV = @"MLRzB6w+wY136832";
 + (void)updateVIPDisplayForViewController:(UIViewController *)vc {
     if (!vc) return;
     
-    // 检查是否是账户页面
-    if ([vc isKindOfClass:NSClassFromString(@"SettingAccountVC")]) {
-        // 直接设置过期时间标签
+    // 检查是否是账户页面 - 使用字符串类名避免前向声明问题
+    if ([NSStringFromClass([vc class]) isEqualToString:@"SettingAccountVC"]) {
+        // 使用KVC获取标签
         UILabel *expiredLabel = [vc valueForKey:@"lblExpiredDate"];
-        if (expiredLabel) {
+        if (expiredLabel && [expiredLabel isKindOfClass:[UILabel class]]) {
             expiredLabel.text = @"永久有效";
             expiredLabel.textColor = [UIColor colorWithRed:0.0 green:0.6 blue:0.0 alpha:1.0];
             NSLog(@"[VIPUnlocker] Set lblExpiredDate to '永久有效'");
@@ -223,7 +204,7 @@ static NSString * const kAESIV = @"MLRzB6w+wY136832";
         
         // 修改购买按钮
         UIButton *purchaseBtn = [vc valueForKey:@"btnPurchaseVIP"];
-        if (purchaseBtn) {
+        if (purchaseBtn && [purchaseBtn isKindOfClass:[UIButton class]]) {
             [purchaseBtn setTitle:@"VIP已解锁" forState:UIControlStateNormal];
             purchaseBtn.enabled = NO;
             purchaseBtn.alpha = 0.5;
@@ -231,7 +212,16 @@ static NSString * const kAESIV = @"MLRzB6w+wY136832";
         }
     }
     
-    // 递归修改所有标签
+    // 检查是否是主页 - 使用字符串类名
+    if ([NSStringFromClass([vc class]) isEqualToString:@"HomeVC"]) {
+        UILabel *vipLabel = [vc valueForKey:@"lblVipMember"];
+        if (vipLabel && [vipLabel isKindOfClass:[UILabel class]]) {
+            vipLabel.text = @"VIP会员";
+            vipLabel.textColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
+            NSLog(@"[VIPUnlocker] Set VIP label to 'VIP会员'");
+        }
+    }
+    
     [self modifyLabelsInView:vc.view];
 }
 
@@ -241,7 +231,6 @@ static NSString * const kAESIV = @"MLRzB6w+wY136832";
             UILabel *label = (UILabel *)subview;
             NSString *text = label.text;
             
-            // 检查是否是VIP购买按钮文字
             if ([text containsString:@"購買VIP"] || 
                 [text containsString:@"购买VIP"] ||
                 [text containsString:@"开通VIP"]) {
@@ -256,16 +245,31 @@ static NSString * const kAESIV = @"MLRzB6w+wY136832";
 
 @end
 
-// Hook UserInfo 类
+#pragma mark - HTTPRequest 类定义
+@interface HTTPRequest : NSObject
+- (void)successHandler:(void (^)(NSHTTPURLResponse *, id))handler;
+- (NSString *)convertDictionaryToJSONString:(NSDictionary *)dict;
+@end
+
+// 为HTTPRequest添加category来添加方法
+@interface HTTPRequest (VIPUnlocker)
+- (NSString *)convertDictionaryToJSONString:(NSDictionary *)dict;
+@end
+
+@implementation HTTPRequest (VIPUnlocker)
+- (NSString *)convertDictionaryToJSONString:(NSDictionary *)dict {
+    return [AESDecryptor convertDictionaryToJSONString:dict];
+}
+@end
+
+#pragma mark - UserInfo Hook
 %hook UserInfo
 
 - (long long)vipLevel {
-    NSLog(@"[VIPUnlocker] UserInfo vipLevel getter -> 999");
     return 999;
 }
 
 - (long long)validateTime {
-    NSLog(@"[VIPUnlocker] UserInfo validateTime getter -> 4102444800");
     return 4102444800;
 }
 
@@ -275,87 +279,72 @@ static NSString * const kAESIV = @"MLRzB6w+wY136832";
 
 %end
 
-// Hook SettingAccountVC
+#pragma mark - SettingAccountVC Hook
 %hook SettingAccountVC
 
 - (void)viewWillAppear:(BOOL)animated {
-    NSLog(@"[VIPUnlocker] SettingAccountVC viewWillAppear");
     %orig;
     
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [VIPUnlockerHelper updateVIPDisplayForViewController:self];
-        [self.view setNeedsLayout];
     });
 }
 
 - (void)viewDidLoad {
-    NSLog(@"[VIPUnlocker] SettingAccountVC viewDidLoad");
     %orig;
-    
     [VIPUnlockerHelper forceVIPStatus];
 }
 
 %end
 
-// Hook HomeVC
+#pragma mark - HomeVC Hook
 %hook HomeVC
 
 - (void)viewDidLoad {
     %orig;
     
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        UILabel *vipLabel = [self valueForKey:@"lblVipMember"];
-        if (vipLabel) {
-            vipLabel.text = @"VIP会员";
-            vipLabel.textColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
-        }
+        [VIPUnlockerHelper updateVIPDisplayForViewController:self];
     });
 }
 
 %end
 
-// Hook HTTPRequest - 拦截并解密响应
+#pragma mark - HTTPRequest Hook
 %hook HTTPRequest
 
 - (void)successHandler:(void (^)(NSHTTPURLResponse *, id))handler {
     NSLog(@"[VIPUnlocker] HTTPRequest successHandler hooked");
     
     void (^modifiedHandler)(NSHTTPURLResponse *, id) = ^(NSHTTPURLResponse *response, id data) {
-        NSLog(@"[VIPUnlocker] Intercepting response data");
+        NSLog(@"[VIPUnlocker] Intercepting response data, type: %@", NSStringFromClass([data class]));
         
         id modifiedData = data;
         
-        // 检查是否是字符串（加密的响应）
+        // 处理字符串类型（加密的Base64响应）
         if ([data isKindOfClass:[NSString class]]) {
             NSString *encryptedString = (NSString *)data;
             NSLog(@"[VIPUnlocker] Received encrypted response, length: %lu", (unsigned long)encryptedString.length);
             
-            // 解密
             NSDictionary *decryptedJSON = [AESDecryptor decryptAndParseJSON:encryptedString];
             if (decryptedJSON) {
                 NSLog(@"[VIPUnlocker] Successfully decrypted response");
-                
-                // 修改VIP信息
                 NSDictionary *modifiedJSON = [VIPUnlockerHelper modifyVIPInResponseData:decryptedJSON];
-                
-                // 重新加密
-                NSString *jsonString = [self convertDictionaryToJSONString:modifiedJSON];
+                NSString *jsonString = [AESDecryptor convertDictionaryToJSONString:modifiedJSON];
                 NSString *reEncrypted = [AESDecryptor encryptString:jsonString key:kAESKey iv:kAESIV];
                 if (reEncrypted) {
                     modifiedData = reEncrypted;
                     NSLog(@"[VIPUnlocker] Re-encrypted modified response");
                 }
-            } else {
-                NSLog(@"[VIPUnlocker] Failed to decrypt response");
             }
         }
-        // 检查是否是字典（已解密的响应）
+        // 处理字典类型
         else if ([data isKindOfClass:[NSDictionary class]]) {
-            NSLog(@"[VIPUnlocker] Response is already dictionary");
+            NSLog(@"[VIPUnlocker] Response is dictionary, modifying directly");
             NSDictionary *modifiedJSON = [VIPUnlockerHelper modifyVIPInResponseData:(NSDictionary *)data];
             modifiedData = modifiedJSON;
         }
-        // 检查是否是NSData
+        // 处理NSData类型
         else if ([data isKindOfClass:[NSData class]]) {
             NSData *responseData = (NSData *)data;
             NSString *responseString = [[NSString alloc] initWithData:responseData encoding:NSUTF8StringEncoding];
@@ -363,7 +352,7 @@ static NSString * const kAESIV = @"MLRzB6w+wY136832";
                 NSDictionary *decryptedJSON = [AESDecryptor decryptAndParseJSON:responseString];
                 if (decryptedJSON) {
                     NSDictionary *modifiedJSON = [VIPUnlockerHelper modifyVIPInResponseData:decryptedJSON];
-                    NSString *jsonString = [self convertDictionaryToJSONString:modifiedJSON];
+                    NSString *jsonString = [AESDecryptor convertDictionaryToJSONString:modifiedJSON];
                     NSString *reEncrypted = [AESDecryptor encryptString:jsonString key:kAESKey iv:kAESIV];
                     if (reEncrypted) {
                         modifiedData = [reEncrypted dataUsingEncoding:NSUTF8StringEncoding];
@@ -381,18 +370,9 @@ static NSString * const kAESIV = @"MLRzB6w+wY136832";
     %orig(modifiedHandler);
 }
 
-- (NSString *)convertDictionaryToJSONString:(NSDictionary *)dict {
-    NSError *error;
-    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:dict options:0 error:&error];
-    if (jsonData && !error) {
-        return [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
-    }
-    return @"{}";
-}
-
 %end
 
-// Hook AppDelegate
+#pragma mark - AppDelegate Hook
 %hook AppDelegate
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
@@ -404,6 +384,20 @@ static NSString * const kAESIV = @"MLRzB6w+wY136832";
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         UIViewController *rootVC = [UIApplication sharedApplication].keyWindow.rootViewController;
         [VIPUnlockerHelper updateVIPDisplayForViewController:rootVC];
+        
+        // 遍历tabbar查找所有页面
+        if ([rootVC isKindOfClass:[UITabBarController class]]) {
+            UITabBarController *tabBar = (UITabBarController *)rootVC;
+            for (UIViewController *vc in tabBar.viewControllers) {
+                [VIPUnlockerHelper updateVIPDisplayForViewController:vc];
+                if ([vc isKindOfClass:[UINavigationController class]]) {
+                    UINavigationController *nav = (UINavigationController *)vc;
+                    for (UIViewController *navVC in nav.viewControllers) {
+                        [VIPUnlockerHelper updateVIPDisplayForViewController:navVC];
+                    }
+                }
+            }
+        }
     });
     
     return result;
@@ -420,5 +414,7 @@ static void init() {
     NSLog(@"[VIPUnlocker] AES IV: %@", kAESIV);
     NSLog(@"[VIPUnlocker] ========================================");
     
-    [VIPUnlockerHelper forceVIPStatus];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [VIPUnlockerHelper forceVIPStatus];
+    });
 }
