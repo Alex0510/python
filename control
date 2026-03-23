@@ -1,5 +1,5 @@
-Package: cloud.eric.speed.speedcn
-Name: SpeedCNVIPUnlocker
+Package: com.eric.liebaovpn
+Name: liebaovpnVIPUnlocker
 Depends: mobilesubstrate (>= 0.9.5000)
 Version: 1.0.0
 Architecture: iphoneos-arm
