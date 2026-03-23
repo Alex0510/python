@@ -1,76 +1,82 @@
-// Tweak.xm
+// Tweak.xm - 专门针对 DDVipViewController
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 
-__attribute__((constructor)) static void init() {
-    Class nsObjectClass = [NSObject class];
-    
-    // 替换 vipStatus 方法
-    SEL vipStatusSel = NSSelectorFromString(@"vipStatus");
-    Method method = class_getInstanceMethod(nsObjectClass, vipStatusSel);
-    if (method) {
-        IMP imp = imp_implementationWithBlock(^BOOL(id self) { return YES; });
-        method_setImplementation(method, imp);
-    } else {
-        IMP imp = imp_implementationWithBlock(^BOOL(id self) { return YES; });
-        class_addMethod(nsObjectClass, vipStatusSel, imp, "B@:");
+static void FomzPro_ActivateVIP() {
+    Class loginManagerClass = NSClassFromString(@"DDLoginManager");
+    if (loginManagerClass) {
+        SEL sharedSel = NSSelectorFromString(@"sharedInstance");
+        id loginManager = nil;
+        
+        if ([loginManagerClass respondsToSelector:sharedSel]) {
+            #pragma clang diagnostic push
+            #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+            loginManager = [loginManagerClass performSelector:sharedSel];
+            #pragma clang diagnostic pop
+        }
+        
+        if (loginManager) {
+            SEL setVipSel = NSSelectorFromString(@"setVipStatus:");
+            if ([loginManager respondsToSelector:setVipSel]) {
+                NSNumber *value = [NSNumber numberWithBool:YES];
+                #pragma clang diagnostic push
+                #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                [loginManager performSelector:setVipSel withObject:value];
+                #pragma clang diagnostic pop
+            }
+        }
     }
-    
-    // 替换 isVIP 方法
-    SEL isVIPSel = NSSelectorFromString(@"isVIP");
-    method = class_getInstanceMethod(nsObjectClass, isVIPSel);
-    if (method) {
-        IMP imp = imp_implementationWithBlock(^BOOL(id self) { return YES; });
-        method_setImplementation(method, imp);
-    } else {
-        IMP imp = imp_implementationWithBlock(^BOOL(id self) { return YES; });
-        class_addMethod(nsObjectClass, isVIPSel, imp, "B@:");
-    }
-    
-    // 替换 isVip 方法
-    SEL isVipSel = NSSelectorFromString(@"isVip");
-    method = class_getInstanceMethod(nsObjectClass, isVipSel);
-    if (method) {
-        IMP imp = imp_implementationWithBlock(^BOOL(id self) { return YES; });
-        method_setImplementation(method, imp);
-    } else {
-        IMP imp = imp_implementationWithBlock(^BOOL(id self) { return YES; });
-        class_addMethod(nsObjectClass, isVipSel, imp, "B@:");
-    }
-    
-    // 替换 isProUser 方法
-    SEL isProUserSel = NSSelectorFromString(@"isProUser");
-    method = class_getInstanceMethod(nsObjectClass, isProUserSel);
-    if (method) {
-        IMP imp = imp_implementationWithBlock(^BOOL(id self) { return YES; });
-        method_setImplementation(method, imp);
-    } else {
-        IMP imp = imp_implementationWithBlock(^BOOL(id self) { return YES; });
-        class_addMethod(nsObjectClass, isProUserSel, imp, "B@:");
-    }
-    
-    // 替换 hasProPermission 方法
-    SEL hasProSel = NSSelectorFromString(@"hasProPermission");
-    method = class_getInstanceMethod(nsObjectClass, hasProSel);
-    if (method) {
-        IMP imp = imp_implementationWithBlock(^BOOL(id self) { return YES; });
-        method_setImplementation(method, imp);
-    } else {
-        IMP imp = imp_implementationWithBlock(^BOOL(id self) { return YES; });
-        class_addMethod(nsObjectClass, hasProSel, imp, "B@:");
-    }
-    
-    // 替换 vipExpiredTs 方法
-    SEL expiredSel = NSSelectorFromString(@"vipExpiredTs");
-    method = class_getInstanceMethod(nsObjectClass, expiredSel);
-    if (method) {
-        IMP imp = imp_implementationWithBlock(^long long(id self) { return 4092599349; });
-        method_setImplementation(method, imp);
-    } else {
-        IMP imp = imp_implementationWithBlock(^long long(id self) { return 4092599349; });
-        class_addMethod(nsObjectClass, expiredSel, imp, "q@:");
-    }
-    
-    NSLog(@"FomzPro: Loaded - All Pro features unlocked");
+}
+
+%hook DDVipViewController
+
+- (void)onPayButtonTouch {
+    FomzPro_ActivateVIP();
+    [self dismissViewControllerAnimated:YES completion:nil];
+}
+
+- (void)onRecoveryButtonTouch {
+    FomzPro_ActivateVIP();
+    [self dismissViewControllerAnimated:YES completion:nil];
+}
+
+- (void)onItemViewTouchWithGesture:(id)sender {
+    FomzPro_ActivateVIP();
+    [self dismissViewControllerAnimated:YES completion:nil];
+}
+
+- (void)viewDidLoad {
+    %orig;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIButton *payButton = [self valueForKey:@"payButton"];
+        if (payButton) payButton.hidden = YES;
+        
+        UILabel *payDesLabel = [self valueForKey:@"payDesLabel"];
+        if (payDesLabel) {
+            payDesLabel.text = @"已解锁";
+            payDesLabel.textColor = [UIColor systemGreenColor];
+        }
+    });
+}
+
+%end
+
+%hook NSObject
+
+- (BOOL)vipStatus { return YES; }
+- (BOOL)isVIP { return YES; }
+- (BOOL)isVip { return YES; }
+- (BOOL)isProUser { return YES; }
+- (BOOL)hasProPermission { return YES; }
+- (BOOL)isPro { return YES; }
+- (long long)vipExpiredTs { return 4092599349; }
+
+%end
+
+%ctor {
+    NSLog(@"FomzPro: Loaded");
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        FomzPro_ActivateVIP();
+    });
 }
