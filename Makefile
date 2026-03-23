@@ -1,11 +1,15 @@
-ARCHS = arm64
-TARGET = iphone:clang:latest:14.0
+export THEOS=/opt/theos
+export SDKVERSION=15.0
+
+INSTALL_TARGET_PROCESSES = SpeedCN
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = FomzPro
+TWEAK_NAME = SpeedCNVIPUnlocker
 
-FomzPro_FILES = Tweak.xm
-FomzPro_FRAMEWORKS = UIKit Foundation
+SpeedCNVIPUnlocker_FILES = Tweak.xm
+SpeedCNVIPUnlocker_CFLAGS = -fobjc-arc
+SpeedCNVIPUnlocker_FRAMEWORKS = UIKit Foundation
+SpeedCNVIPUnlocker_PRIVATE_FRAMEWORKS = 
 
 include $(THEOS_MAKE_PATH)/tweak.mk
