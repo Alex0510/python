@@ -11,7 +11,7 @@
 @property (nonatomic, strong) UIImageView *fomzImageView;
 @end
 
-// 声明DDVipViewController类
+// 声明DDVipViewController类 - 添加updateVIPUI方法声明
 @interface DDVipViewController : UIViewController
 @property (nonatomic, strong) NSString *monthPriceString;
 @property (nonatomic, strong) NSString *yearsPriceString;
@@ -24,6 +24,7 @@
 @property (nonatomic, strong) UIView *foreverItemView;
 - (void)onPayButtonTouch;
 - (void)onRecoveryButtonTouch;
+- (void)updateVIPUI;  // 添加这个方法声明
 @end
 
 // 声明VIP管理类
@@ -42,7 +43,6 @@ static BOOL isModifying = NO;
 // 新的setText实现 - 修复无限递归
 static void replaced_setText(id self, SEL _cmd, NSString *text) {
     if (isModifying) {
-        // 如果正在修改中，直接调用原始方法
         original_setText(self, _cmd, text);
         return;
     }
