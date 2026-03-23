@@ -53,6 +53,7 @@
 @interface UTHomeViewController : UIViewController
 @property (nonatomic, strong) UILabel *labelVipInfo;
 @property (nonatomic, strong) UILabel *labelLineSelected;
+@property (nonatomic, strong) UILabel *labelTrafficToday;  // 今日流量标签
 @property (nonatomic, strong) UIView *viewExtraInfo;
 - (void)uiRefresh;
 - (BOOL)showTrialOrPayInfoForFreeMember;
@@ -78,7 +79,7 @@ static const int VIP_DATE = 20991231;
 
 %group UnlockVIP
 
-// 核心VIP判断
+// 核心VIP判断 - 只修改VIP状态，不修改流量
 %hook UTUserModelManager
 
 - (BOOL)isVip {
@@ -107,7 +108,7 @@ static const int VIP_DATE = 20991231;
 
 %end
 
-// 用户数据
+// 用户数据 - 只修改VIP相关数据，不修改流量限制
 %hook UTUser
 
 - (int)membertime {
@@ -118,17 +119,9 @@ static const int VIP_DATE = 20991231;
     return VIP_DATE;
 }
 
-- (float)limitkbps {
-    return 0.0f;
-}
-
-- (float)limitkbytes {
-    return 0.0f;
-}
-
-- (float)daykbytes {
-    return INFINITE_TRAFFIC;
-}
+// 不修改limitkbps - 保持原样，让应用自己计算速度限制
+// 不修改limitkbytes - 保持原样
+// 不修改daykbytes - 保持原样，让应用自己统计每日流量
 
 - (float)point {
     return INFINITE_POINT;
@@ -187,7 +180,7 @@ static const int VIP_DATE = 20991231;
 
 %end
 
-// 首页UI修改
+// 首页UI修改 - 只修改VIP相关文字，不修改流量显示
 %hook UTHomeViewController
 
 - (void)viewDidLoad {
@@ -205,6 +198,7 @@ static const int VIP_DATE = 20991231;
     %orig;
     
     @try {
+        // 只修改VIP相关的文字，不修改流量
         if (self.labelVipInfo) {
             self.labelVipInfo.text = @"VIP会员 · 永久有效";
         }
@@ -214,6 +208,9 @@ static const int VIP_DATE = 20991231;
         if (self.viewExtraInfo) {
             self.viewExtraInfo.hidden = YES;
         }
+        
+        // 注意：不修改 labelTrafficToday 的文字，让应用自己显示真实流量
+        // 如果应用自己会显示流量，我们不应该覆盖它
     } @catch (NSException *e) {
         NSLog(@"UI refresh error: %@", e);
     }
@@ -262,7 +259,7 @@ static const int VIP_DATE = 20991231;
 %ctor {
     NSLog(@"========================================");
     NSLog(@"SpeedCN VIP Unlocker Loaded!");
-    NSLog(@"VIP功能已解锁");
+    NSLog(@"VIP功能已解锁 - 永久会员");
     NSLog(@"========================================");
     
     @try {
