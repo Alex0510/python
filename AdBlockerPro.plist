@@ -6,7 +6,7 @@
     <dict>
         <key>Bundles</key>
         <array>
-            <string>com.bytecrossing.Egern</string>
+            <string>com.eric.adblock</string>
         </array>
     </dict>
 </dict>
