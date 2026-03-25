@@ -11,7 +11,6 @@
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     UIView *view = [super hitTest:point withEvent:event];
 
-    // 只让有交互的控件接收事件
     if ([view isKindOfClass:[UIButton class]] ||
         [view isKindOfClass:[UITextField class]] ||
         [view isKindOfClass:[UITextView class]] ||
@@ -40,43 +39,54 @@ static BOOL kEnable = YES;
 static BOOL blockAlerts = YES;
 static NSMutableArray *logs;
 static NSMutableArray *rules;
-static BOOL isUIReady = NO;  // UI是否已准备好
 
 #define kRulesKey @"rules"
 #define kBlockAlertsKey @"blockAlerts"
 #define kEnableKey @"enable"
 
-#pragma mark - 前置声明
+#pragma mark - 线程安全队列
 
-static void togglePanel(void);
-static void addLog(NSString *log);
+static dispatch_queue_t logQueue() {
+    static dispatch_queue_t queue;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        queue = dispatch_queue_create("com.adblocker.log", DISPATCH_QUEUE_SERIAL);
+    });
+    return queue;
+}
 
 #pragma mark - 日志
 
 static void addLog(NSString *log) {
-    if (!logs) {
-        logs = [NSMutableArray array];
-    }
-
-    [logs addObject:[NSString stringWithFormat:@"\n%@", log]];
+    if (!log) return;
     
-    // 限制日志数量
-    if (logs.count > 500) {
-        [logs removeObjectsInRange:NSMakeRange(0, 200)];
-    }
-
-    // 只有在UI准备好且logView存在时才更新UI
-    if (isUIReady && logView) {
+    dispatch_async(logQueue(), ^{
+        if (!logs) {
+            logs = [NSMutableArray array];
+        }
+        
+        [logs addObject:[NSString stringWithFormat:@"\n%@", log]];
+        
+        if (logs.count > 500) {
+            [logs removeObjectsInRange:NSMakeRange(0, 200)];
+        }
+        
+        // 创建日志文本的副本
+        NSString *logText = [logs componentsJoinedByString:@""];
+        
+        // 安全地更新UI
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (logView && logs) {
-                NSString *text = [logs componentsJoinedByString:@""];
-                if (text) {
-                    logView.text = text;
+            @try {
+                if (logView && logView.superview) {
+                    logView.text = logText;
                     [logView scrollRangeToVisible:NSMakeRange(logView.text.length, 0)];
                 }
+            } @catch (NSException *exception) {
+                // 静默失败，避免崩溃
+                NSLog(@"AdBlocker: Failed to update log view: %@", exception);
             }
         });
-    }
+    });
 }
 
 #pragma mark - 规则
@@ -110,26 +120,29 @@ static void saveSettings() {
 #pragma mark - 匹配
 
 static BOOL match(NSString *url, NSString *rule) {
-    if ([rule containsString:@"\\"] || [rule containsString:@".*"] || 
-        [rule containsString:@"^"] || [rule containsString:@"$"] ||
-        [rule containsString:@"+"] || [rule containsString:@"?"]) {
-        NSError *error = nil;
-        NSRegularExpression *re = [NSRegularExpression regularExpressionWithPattern:rule options:0 error:&error];
-        if (error) {
-            return NO;
+    @try {
+        if ([rule containsString:@"\\"] || [rule containsString:@".*"] || 
+            [rule containsString:@"^"] || [rule containsString:@"$"] ||
+            [rule containsString:@"+"] || [rule containsString:@"?"]) {
+            NSError *error = nil;
+            NSRegularExpression *re = [NSRegularExpression regularExpressionWithPattern:rule options:0 error:&error];
+            if (error) return NO;
+            return [re numberOfMatchesInString:url options:0 range:NSMakeRange(0, url.length)] > 0;
         }
-        return [re numberOfMatchesInString:url options:0 range:NSMakeRange(0, url.length)] > 0;
+        return [url containsString:rule];
+    } @catch (NSException *exception) {
+        return NO;
     }
-    return [url containsString:rule];
 }
 
 static BOOL shouldBlock(NSURL *url) {
-    if (!kEnable) return NO;
+    if (!kEnable || !url) return NO;
     
     NSString *u = url.absoluteString;
+    if (!u) return NO;
     
     for (NSString *r in rules) {
-        if (match(u, r)) {
+        if (r && match(u, r)) {
             addLog([NSString stringWithFormat:@"[BLOCK] %@", u]);
             return YES;
         }
@@ -170,7 +183,13 @@ static BOOL shouldBlock(NSURL *url) {
 
 - (void)handleTap {
     if (!isDragging) {
-        togglePanel();
+        if (panel) {
+            isOpen = !isOpen;
+            [UIView animateWithDuration:0.3 animations:^{
+                panel.alpha = isOpen ? 1 : 0;
+                panel.transform = isOpen ? CGAffineTransformIdentity : CGAffineTransformMakeScale(0.9, 0.9);
+            }];
+        }
     }
 }
 
@@ -193,10 +212,8 @@ static BOOL shouldBlock(NSURL *url) {
     CGFloat screenWidth = UIScreen.mainScreen.bounds.size.width;
     CGFloat screenHeight = UIScreen.mainScreen.bounds.size.height;
     
-    if (frame.origin.x < 0) frame.origin.x = 0;
-    if (frame.origin.x > screenWidth - frame.size.width) frame.origin.x = screenWidth - frame.size.width;
-    if (frame.origin.y < 0) frame.origin.y = 0;
-    if (frame.origin.y > screenHeight - frame.size.height) frame.origin.y = screenHeight - frame.size.height;
+    frame.origin.x = MAX(0, MIN(frame.origin.x, screenWidth - frame.size.width));
+    frame.origin.y = MAX(0, MIN(frame.origin.y, screenHeight - frame.size.height));
     
     self.frame = frame;
     startPoint = currentPoint;
@@ -204,12 +221,12 @@ static BOOL shouldBlock(NSURL *url) {
 
 - (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
     [super touchesEnded:touches withEvent:event];
-    
     if (!isDragging) return;
     
     [UIView animateWithDuration:0.25 animations:^{
         CGRect frame = self.frame;
         CGFloat screenWidth = UIScreen.mainScreen.bounds.size.width;
+        CGFloat screenHeight = UIScreen.mainScreen.bounds.size.height;
         
         if (frame.origin.x + frame.size.width / 2 < screenWidth / 2) {
             frame.origin.x = 8;
@@ -217,38 +234,37 @@ static BOOL shouldBlock(NSURL *url) {
             frame.origin.x = screenWidth - frame.size.width - 8;
         }
         
-        CGFloat screenHeight = UIScreen.mainScreen.bounds.size.height;
-        if (frame.origin.y < 40) frame.origin.y = 40;
-        if (frame.origin.y > screenHeight - frame.size.height - 40) {
-            frame.origin.y = screenHeight - frame.size.height - 40;
-        }
-        
+        frame.origin.y = MAX(40, MIN(frame.origin.y, screenHeight - frame.size.height - 40));
         self.frame = frame;
     }];
 }
 
 @end
 
-#pragma mark - 展开/收起
+#pragma mark - Actions 类
 
-static void togglePanel() {
-    if (!panel) return;
-    
-    isOpen = !isOpen;
+@interface TweakActions : NSObject
++ (void)closePanel;
++ (void)addRule;
++ (void)clearRules;
++ (void)toggleEnable:(UISwitch *)sender;
++ (void)toggleBlockAlerts:(UISwitch *)sender;
++ (void)segmentChanged:(UISegmentedControl *)sender;
+@end
 
-    [UIView animateWithDuration:0.3 delay:0 usingSpringWithDamping:0.8 initialSpringVelocity:0 options:UIViewAnimationOptionCurveEaseOut animations:^{
-        panel.alpha = isOpen ? 1 : 0;
-        panel.transform = isOpen ? CGAffineTransformIdentity : CGAffineTransformMakeScale(0.9, 0.9);
-    } completion:nil];
-    
-    if (isOpen) {
-        [panel.superview bringSubviewToFront:panel];
+@implementation TweakActions
+
++ (void)closePanel {
+    if (isOpen && panel) {
+        isOpen = NO;
+        [UIView animateWithDuration:0.3 animations:^{
+            panel.alpha = 0;
+            panel.transform = CGAffineTransformMakeScale(0.9, 0.9);
+        }];
     }
 }
 
-#pragma mark - Action 函数
-
-static void addRuleAction(void) {
++ (void)addRule {
     if (input && input.text.length > 0) {
         [rules addObject:input.text];
         saveRules();
@@ -266,7 +282,7 @@ static void addRuleAction(void) {
     }
 }
 
-static void clearRulesAction(void) {
++ (void)clearRules {
     [rules removeAllObjects];
     saveRules();
     addLog(@"已清空所有规则");
@@ -277,19 +293,19 @@ static void clearRulesAction(void) {
     }
 }
 
-static void toggleEnableAction(UISwitch *sender) {
++ (void)toggleEnable:(UISwitch *)sender {
     kEnable = sender.isOn;
     saveSettings();
     addLog([NSString stringWithFormat:@"全局屏蔽: %@", kEnable ? @"开启" : @"关闭"]);
 }
 
-static void toggleBlockAlertsAction(UISwitch *sender) {
++ (void)toggleBlockAlerts:(UISwitch *)sender {
     blockAlerts = sender.isOn;
     saveSettings();
     addLog([NSString stringWithFormat:@"弹窗屏蔽: %@", blockAlerts ? @"开启" : @"关闭"]);
 }
 
-static void segmentChangedAction(UISegmentedControl *sender) {
++ (void)segmentChanged:(UISegmentedControl *)sender {
     UITextView *ruleListView = (UITextView *)[panel viewWithTag:1001];
     
     if (sender.selectedSegmentIndex == 0) {
@@ -307,30 +323,6 @@ static void segmentChangedAction(UISegmentedControl *sender) {
     }
 }
 
-static void closePanelAction(void) {
-    if (isOpen) {
-        togglePanel();
-    }
-}
-
-#pragma mark - Actions 类
-
-@interface TweakActions : NSObject
-+ (void)closePanel;
-+ (void)addRule;
-+ (void)clearRules;
-+ (void)toggleEnable:(UISwitch *)sender;
-+ (void)toggleBlockAlerts:(UISwitch *)sender;
-+ (void)segmentChanged:(UISegmentedControl *)sender;
-@end
-
-@implementation TweakActions
-+ (void)closePanel { closePanelAction(); }
-+ (void)addRule { addRuleAction(); }
-+ (void)clearRules { clearRulesAction(); }
-+ (void)toggleEnable:(UISwitch *)sender { toggleEnableAction(sender); }
-+ (void)toggleBlockAlerts:(UISwitch *)sender { toggleBlockAlertsAction(sender); }
-+ (void)segmentChanged:(UISegmentedControl *)sender { segmentChangedAction(sender); }
 @end
 
 #pragma mark - 初始化 UI
@@ -342,15 +334,17 @@ static void setupUI() {
             gWindow.windowLevel = UIWindowLevelAlert + 100;
             gWindow.backgroundColor = [UIColor clearColor];
             gWindow.userInteractionEnabled = YES;
-
+            gWindow.hidden = NO;
+            
             UIViewController *vc = [UIViewController new];
             vc.view.backgroundColor = [UIColor clearColor];
             gWindow.rootViewController = vc;
-            gWindow.hidden = NO;
-
+            
+            // 悬浮球
             ball = [FloatBall new];
             [vc.view addSubview:ball];
-
+            
+            // 面板
             CGFloat panelWidth = 340;
             CGFloat panelHeight = 540;
             CGFloat panelX = (UIScreen.mainScreen.bounds.size.width - panelWidth) / 2;
@@ -359,24 +353,20 @@ static void setupUI() {
             panel = [[UIView alloc] initWithFrame:CGRectMake(panelX, panelY, panelWidth, panelHeight)];
             panel.backgroundColor = [[UIColor colorWithWhite:0.1 alpha:0.95] colorWithAlphaComponent:0.95];
             panel.layer.cornerRadius = 15;
-            panel.layer.shadowColor = UIColor.blackColor.CGColor;
-            panel.layer.shadowOffset = CGSizeMake(0, 5);
-            panel.layer.shadowRadius = 15;
-            panel.layer.shadowOpacity = 0.3;
             panel.alpha = 0;
             panel.transform = CGAffineTransformMakeScale(0.9, 0.9);
             [vc.view addSubview:panel];
             
-            // 标题栏
+            // 标题
             UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 15, 150, 30)];
             titleLabel.text = @"网络屏蔽插件";
             titleLabel.textColor = UIColor.whiteColor;
             titleLabel.font = [UIFont boldSystemFontOfSize:18];
             [panel addSubview:titleLabel];
             
+            // 关闭按钮
             UIButton *closeBtn = [[UIButton alloc] initWithFrame:CGRectMake(panelWidth - 45, 15, 30, 30)];
             [closeBtn setTitle:@"✕" forState:UIControlStateNormal];
-            closeBtn.titleLabel.font = [UIFont systemFontOfSize:20];
             closeBtn.backgroundColor = [UIColor colorWithWhite:0.3 alpha:1];
             closeBtn.layer.cornerRadius = 15;
             [closeBtn addTarget:[TweakActions class] action:@selector(closePanel) forControlEvents:UIControlEventTouchUpInside];
@@ -391,7 +381,6 @@ static void setupUI() {
             UILabel *enableLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 15, 80, 20)];
             enableLabel.text = @"全局屏蔽";
             enableLabel.textColor = UIColor.whiteColor;
-            enableLabel.font = [UIFont systemFontOfSize:14];
             [switchContainer addSubview:enableLabel];
             
             enableSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(switchContainer.frame.size.width - 65, 10, 50, 30)];
@@ -408,7 +397,6 @@ static void setupUI() {
             UILabel *alertLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 15, 100, 20)];
             alertLabel.text = @"屏蔽插件弹窗";
             alertLabel.textColor = UIColor.whiteColor;
-            alertLabel.font = [UIFont systemFontOfSize:14];
             [alertContainer addSubview:alertLabel];
             
             alertSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(alertContainer.frame.size.width - 65, 10, 50, 30)];
@@ -420,7 +408,6 @@ static void setupUI() {
             UILabel *ruleLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 180, 100, 25)];
             ruleLabel.text = @"添加规则";
             ruleLabel.textColor = UIColor.whiteColor;
-            ruleLabel.font = [UIFont boldSystemFontOfSize:14];
             [panel addSubview:ruleLabel];
             
             input = [[UITextField alloc] initWithFrame:CGRectMake(15, 210, panelWidth - 100, 40)];
@@ -429,27 +416,23 @@ static void setupUI() {
             input.placeholder = @"域名或正则表达式";
             input.leftView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 10, 40)];
             input.leftViewMode = UITextFieldViewModeAlways;
-            input.font = [UIFont systemFontOfSize:14];
             [panel addSubview:input];
-
+            
             UIButton *addBtn = [[UIButton alloc] initWithFrame:CGRectMake(panelWidth - 75, 210, 60, 40)];
             [addBtn setTitle:@"添加" forState:UIControlStateNormal];
             addBtn.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:0.9 alpha:1];
             addBtn.layer.cornerRadius = 8;
-            addBtn.titleLabel.font = [UIFont boldSystemFontOfSize:14];
             [addBtn addTarget:[TweakActions class] action:@selector(addRule) forControlEvents:UIControlEventTouchUpInside];
             [panel addSubview:addBtn];
             
-            // 规则列表标题
+            // 规则列表
             UILabel *listLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 260, 100, 25)];
             listLabel.text = @"规则列表";
             listLabel.textColor = UIColor.whiteColor;
-            listLabel.font = [UIFont boldSystemFontOfSize:14];
             [panel addSubview:listLabel];
             
             UIButton *clearBtn = [[UIButton alloc] initWithFrame:CGRectMake(panelWidth - 70, 260, 55, 25)];
             [clearBtn setTitle:@"清空" forState:UIControlStateNormal];
-            clearBtn.titleLabel.font = [UIFont systemFontOfSize:12];
             clearBtn.backgroundColor = [UIColor colorWithRed:0.8 green:0.2 blue:0.2 alpha:1];
             clearBtn.layer.cornerRadius = 5;
             [clearBtn addTarget:[TweakActions class] action:@selector(clearRules) forControlEvents:UIControlEventTouchUpInside];
@@ -468,7 +451,6 @@ static void setupUI() {
             logView.textColor = [UIColor colorWithRed:0.3 green:0.9 blue:0.3 alpha:1];
             logView.font = [UIFont fontWithName:@"Menlo" size:10];
             logView.editable = NO;
-            logView.layer.cornerRadius = 8;
             [panel addSubview:logView];
             
             // 规则列表视图
@@ -477,7 +459,6 @@ static void setupUI() {
             ruleListView.textColor = UIColor.whiteColor;
             ruleListView.font = [UIFont fontWithName:@"Menlo" size:11];
             ruleListView.editable = NO;
-            ruleListView.layer.cornerRadius = 8;
             ruleListView.hidden = YES;
             ruleListView.tag = 1001;
             [panel addSubview:ruleListView];
@@ -489,16 +470,15 @@ static void setupUI() {
             }
             ruleListView.text = ruleText.length ? ruleText : @"暂无规则";
             
-            // 标记UI已准备好
-            isUIReady = YES;
-            
-            // 添加日志（现在UI已准备好）
-            addLog(@"插件已启动 v1.0");
-            addLog([NSString stringWithFormat:@"全局屏蔽: %@", kEnable ? @"开启" : @"关闭"]);
-            addLog([NSString stringWithFormat:@"弹窗屏蔽: %@", blockAlerts ? @"开启" : @"关闭"]);
+            // 延迟添加启动日志，确保UI完全就绪
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                addLog(@"插件已启动 v1.0");
+                addLog([NSString stringWithFormat:@"全局屏蔽: %@", kEnable ? @"开启" : @"关闭"]);
+                addLog([NSString stringWithFormat:@"弹窗屏蔽: %@", blockAlerts ? @"开启" : @"关闭"]);
+            });
             
         } @catch (NSException *exception) {
-            NSLog(@"AdBlockerPro: Setup UI failed - %@", exception);
+            NSLog(@"AdBlocker: Setup UI failed - %@", exception);
         }
     });
 }
@@ -542,7 +522,7 @@ static void setupUI() {
                 });
             }
         } @catch (NSException *exception) {
-            // 忽略异常，避免影响应用
+            // 忽略异常
         }
     }
 }
@@ -552,8 +532,7 @@ static void setupUI() {
 %hook NSURLSession
 
 - (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))completionHandler {
-
-    if (kEnable && shouldBlock(request.URL)) {
+    if (kEnable && request.URL && shouldBlock(request.URL)) {
         NSError *error = [NSError errorWithDomain:@"NetworkBlocker" 
                                              code:999 
                                          userInfo:@{NSLocalizedDescriptionKey: @"已被网络屏蔽插件拦截"}];
@@ -562,7 +541,6 @@ static void setupUI() {
         }
         return nil;
     }
-
     return %orig;
 }
 
