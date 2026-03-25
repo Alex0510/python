@@ -1,9 +1,9 @@
-Package: com.bytecrossing.egern
-Name: EgernProUnlock
+Package: com.eric.adblock
+Name: adblock
 Depends: mobilesubstrate (>= 0.9.5000)
 Version: 1.0.0
 Architecture: iphoneos-arm
-Description: Pro
+Description: adblock
 Maintainer: Mr.Eric
 Author: Mr.Eric
 Section: Tweaks
