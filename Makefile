@@ -3,9 +3,9 @@ TARGET = iphone:clang:latest:15.0
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = URLBlockerPro
+TWEAK_NAME = AdBlockerPro
 
-URLBlockerPro_FILES = Tweak.xm
-URLBlockerPro_FRAMEWORKS = UIKit Foundation
+AdBlockerPro_FILES = Tweak.xm
+AdBlockerPro_FRAMEWORKS = UIKit Foundation
 
 include $(THEOS_MAKE_PATH)/tweak.mk
