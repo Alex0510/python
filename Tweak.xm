@@ -65,16 +65,17 @@ static void addLog(NSString *log) {
             logs = [NSMutableArray array];
         }
         
-        [logs addObject:[NSString stringWithFormat:@"\n%@", log]];
+        NSString *timestamp = [NSDateFormatter localizedStringFromDate:[NSDate date] 
+                                                              dateStyle:NSDateFormatterNoStyle 
+                                                              timeStyle:NSDateFormatterMediumStyle];
+        [logs addObject:[NSString stringWithFormat:@"[%@] %@\n", timestamp, log]];
         
         if (logs.count > 500) {
             [logs removeObjectsInRange:NSMakeRange(0, 200)];
         }
         
-        // 创建日志文本的副本
         NSString *logText = [logs componentsJoinedByString:@""];
         
-        // 安全地更新UI
         dispatch_async(dispatch_get_main_queue(), ^{
             @try {
                 if (logView && logView.superview) {
@@ -82,8 +83,7 @@ static void addLog(NSString *log) {
                     [logView scrollRangeToVisible:NSMakeRange(logView.text.length, 0)];
                 }
             } @catch (NSException *exception) {
-                // 静默失败，避免崩溃
-                NSLog(@"AdBlocker: Failed to update log view: %@", exception);
+                // 静默失败
             }
         });
     });
@@ -94,7 +94,7 @@ static void addLog(NSString *log) {
 static void loadRules() {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     NSArray *arr = [defaults objectForKey:kRulesKey];
-    rules = arr ? [arr mutableCopy] : [@[@"simhaoka.com", @"t\\.me/.*"] mutableCopy];
+    rules = arr ? [arr mutableCopy] : [@[@"simhaoka.com", @"t\\.me/.*", @"doubleclick.net", @"googleadservices.com", @"googlesyndication.com"] mutableCopy];
     
     if ([defaults objectForKey:kEnableKey]) {
         kEnable = [defaults boolForKey:kEnableKey];
@@ -120,17 +120,40 @@ static void saveSettings() {
 #pragma mark - 匹配
 
 static BOOL match(NSString *url, NSString *rule) {
+    if (!url || !rule) return NO;
+    
     @try {
-        if ([rule containsString:@"\\"] || [rule containsString:@".*"] || 
-            [rule containsString:@"^"] || [rule containsString:@"$"] ||
-            [rule containsString:@"+"] || [rule containsString:@"?"]) {
+        // 检查是否是正则表达式（包含特殊字符）
+        BOOL isRegex = [rule containsString:@"\\"] || 
+                       [rule containsString:@".*"] || 
+                       [rule containsString:@"^"] || 
+                       [rule containsString:@"$"] ||
+                       [rule containsString:@"+"] || 
+                       [rule containsString:@"?"] ||
+                       [rule containsString:@"["] ||
+                       [rule containsString:@"]"] ||
+                       [rule containsString:@"("] ||
+                       [rule containsString:@")"] ||
+                       [rule containsString:@"|"];
+        
+        if (isRegex) {
             NSError *error = nil;
-            NSRegularExpression *re = [NSRegularExpression regularExpressionWithPattern:rule options:0 error:&error];
-            if (error) return NO;
-            return [re numberOfMatchesInString:url options:0 range:NSMakeRange(0, url.length)] > 0;
+            NSRegularExpression *re = [NSRegularExpression regularExpressionWithPattern:rule 
+                                                                                 options:NSRegularExpressionCaseInsensitive 
+                                                                                   error:&error];
+            if (error) {
+                addLog([NSString stringWithFormat:@"[正则错误] %@ - %@", rule, error.localizedDescription]);
+                return NO;
+            }
+            NSRange range = NSMakeRange(0, url.length);
+            NSUInteger count = [re numberOfMatchesInString:url options:0 range:range];
+            return count > 0;
+        } else {
+            // 普通字符串匹配，不区分大小写
+            return [url localizedCaseInsensitiveContainsString:rule];
         }
-        return [url containsString:rule];
     } @catch (NSException *exception) {
+        addLog([NSString stringWithFormat:@"[匹配异常] %@", exception]);
         return NO;
     }
 }
@@ -138,15 +161,27 @@ static BOOL match(NSString *url, NSString *rule) {
 static BOOL shouldBlock(NSURL *url) {
     if (!kEnable || !url) return NO;
     
-    NSString *u = url.absoluteString;
-    if (!u) return NO;
+    NSString *absoluteURL = url.absoluteString;
+    NSString *host = url.host;
     
-    for (NSString *r in rules) {
-        if (r && match(u, r)) {
-            addLog([NSString stringWithFormat:@"[BLOCK] %@", u]);
+    addLog([NSString stringWithFormat:@"[检查URL] %@", absoluteURL]);
+    
+    for (NSString *rule in rules) {
+        if (!rule || rule.length == 0) continue;
+        
+        // 检查完整URL
+        if (match(absoluteURL, rule)) {
+            addLog([NSString stringWithFormat:@"[✓ 匹配规则] %@ 匹配 %@", absoluteURL, rule]);
+            return YES;
+        }
+        
+        // 检查域名
+        if (host && match(host, rule)) {
+            addLog([NSString stringWithFormat:@"[✓ 匹配规则] %@ 匹配 %@", host, rule]);
             return YES;
         }
     }
+    
     return NO;
 }
 
@@ -182,14 +217,12 @@ static BOOL shouldBlock(NSURL *url) {
 }
 
 - (void)handleTap {
-    if (!isDragging) {
-        if (panel) {
-            isOpen = !isOpen;
-            [UIView animateWithDuration:0.3 animations:^{
-                panel.alpha = isOpen ? 1 : 0;
-                panel.transform = isOpen ? CGAffineTransformIdentity : CGAffineTransformMakeScale(0.9, 0.9);
-            }];
-        }
+    if (!isDragging && panel) {
+        isOpen = !isOpen;
+        [UIView animateWithDuration:0.3 animations:^{
+            panel.alpha = isOpen ? 1 : 0;
+            panel.transform = isOpen ? CGAffineTransformIdentity : CGAffineTransformMakeScale(0.9, 0.9);
+        }];
     }
 }
 
@@ -266,9 +299,10 @@ static BOOL shouldBlock(NSURL *url) {
 
 + (void)addRule {
     if (input && input.text.length > 0) {
-        [rules addObject:input.text];
+        NSString *newRule = [input.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        [rules addObject:newRule];
         saveRules();
-        addLog([NSString stringWithFormat:@"[添加规则] %@", input.text]);
+        addLog([NSString stringWithFormat:@"[添加规则] %@", newRule]);
         input.text = @"";
         
         UITextView *ruleListView = (UITextView *)[panel viewWithTag:1001];
@@ -413,9 +447,11 @@ static void setupUI() {
             input = [[UITextField alloc] initWithFrame:CGRectMake(15, 210, panelWidth - 100, 40)];
             input.backgroundColor = UIColor.whiteColor;
             input.layer.cornerRadius = 8;
-            input.placeholder = @"域名或正则表达式";
+            input.placeholder = @"域名或正则表达式 (如: simhaoka.com)";
             input.leftView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 10, 40)];
             input.leftViewMode = UITextFieldViewModeAlways;
+            input.autocapitalizationType = UITextAutocapitalizationTypeNone;
+            input.autocorrectionType = UITextAutocorrectionTypeNo;
             [panel addSubview:input];
             
             UIButton *addBtn = [[UIButton alloc] initWithFrame:CGRectMake(panelWidth - 75, 210, 60, 40)];
@@ -470,11 +506,12 @@ static void setupUI() {
             }
             ruleListView.text = ruleText.length ? ruleText : @"暂无规则";
             
-            // 延迟添加启动日志，确保UI完全就绪
+            // 延迟添加启动日志
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 addLog(@"插件已启动 v1.0");
                 addLog([NSString stringWithFormat:@"全局屏蔽: %@", kEnable ? @"开启" : @"关闭"]);
                 addLog([NSString stringWithFormat:@"弹窗屏蔽: %@", blockAlerts ? @"开启" : @"关闭"]);
+                addLog([NSString stringWithFormat:@"当前规则数: %lu", (unsigned long)rules.count]);
             });
             
         } @catch (NSException *exception) {
@@ -506,15 +543,6 @@ static void setupUI() {
                 }
             }
             
-            if (!shouldBlockAlert) {
-                for (NSString *rule in rules) {
-                    if ([fullText containsString:rule] || [title containsString:rule] || [message containsString:rule]) {
-                        shouldBlockAlert = YES;
-                        break;
-                    }
-                }
-            }
-            
             if (shouldBlockAlert) {
                 addLog(@"[BLOCK ALERT] 已屏蔽应用弹窗");
                 dispatch_async(dispatch_get_main_queue(), ^{
@@ -532,13 +560,32 @@ static void setupUI() {
 %hook NSURLSession
 
 - (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))completionHandler {
+    
+    NSString *urlString = request.URL.absoluteString;
+    addLog([NSString stringWithFormat:@"[请求] %@", urlString]);
+    
     if (kEnable && request.URL && shouldBlock(request.URL)) {
+        addLog([NSString stringWithFormat:@"[拦截] %@", urlString]);
         NSError *error = [NSError errorWithDomain:@"NetworkBlocker" 
                                              code:999 
                                          userInfo:@{NSLocalizedDescriptionKey: @"已被网络屏蔽插件拦截"}];
         if (completionHandler) {
             completionHandler(nil, nil, error);
         }
+        return nil;
+    }
+
+    return %orig;
+}
+
+%end
+
+// 同时 Hook NSURLConnection 以拦截更多请求
+%hook NSURLConnection
+
++ (NSURLConnection *)connectionWithRequest:(NSURLRequest *)request delegate:(id)delegate {
+    if (kEnable && request.URL && shouldBlock(request.URL)) {
+        addLog([NSString stringWithFormat:@"[拦截 NSURLConnection] %@", request.URL]);
         return nil;
     }
     return %orig;
