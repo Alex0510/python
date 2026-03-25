@@ -1,9 +1,11 @@
 #import <UIKit/UIKit.h>
 #import <CaptainHook/CaptainHook.h>
+#import <WebKit/WebKit.h>
+#import <SafariServices/SafariServices.h>
 
 static BOOL kEnableBlock = YES;
 
-#pragma mark - URL 过滤规则
+#pragma mark - URL 规则
 
 BOOL isBlockedURL(NSString *url) {
     if (!url) return NO;
@@ -12,15 +14,14 @@ BOOL isBlockedURL(NSString *url) {
         @"simhaoka.com",
         @"t.me",
         @"telegram",
-        @"invite",
-        @"jump",
-        @"open",
-        @"scheme"
+        @"tg://",
+        @"joinchat",
+        @"invite"
     ];
 
     for (NSString *rule in rules) {
         if ([url.lowercaseString containsString:rule]) {
-            NSLog(@"[拦截URL] %@", url);
+            NSLog(@"🚫 拦截URL: %@", url);
             return YES;
         }
     }
@@ -28,13 +29,13 @@ BOOL isBlockedURL(NSString *url) {
     return NO;
 }
 
-#pragma mark - Hook UIApplication 打开URL
+#pragma mark - UIApplication
 
 CHDeclareClass(UIApplication)
 
 CHOptimizedMethod1(self, BOOL, UIApplication, openURL, NSURL *, url) {
     if (kEnableBlock && isBlockedURL(url.absoluteString)) {
-        NSLog(@"🚫 已拦截 openURL: %@", url);
+        NSLog(@"🚫 openURL 被拦截: %@", url);
         return NO;
     }
     return CHSuper1(UIApplication, openURL, url);
@@ -42,22 +43,29 @@ CHOptimizedMethod1(self, BOOL, UIApplication, openURL, NSURL *, url) {
 
 CHOptimizedMethod2(self, BOOL, UIApplication, openURL, NSURL *, url, options, NSDictionary *, options) {
     if (kEnableBlock && isBlockedURL(url.absoluteString)) {
-        NSLog(@"🚫 已拦截 openURL(options): %@", url);
+        NSLog(@"🚫 openURL(options) 被拦截: %@", url);
         return NO;
     }
     return CHSuper2(UIApplication, openURL, url, options, options);
 }
 
-#pragma mark - Hook UIAlertController 弹窗
+#pragma mark - 弹窗拦截
 
-CHDeclareClass(UIAlertController)
+CHDeclareClass(UIViewController)
 
-CHOptimizedMethod2(self, void, UIViewController, presentViewController, UIViewController *, vc, animated, BOOL, animated, completion, void (^)(void), completion) {
-
+CHOptimizedMethod3(self, void, UIViewController,
+presentViewController,
+UIViewController *, vc,
+animated, BOOL, animated,
+completion, void (^)(void), completion)
+{
     if (kEnableBlock && [vc isKindOfClass:[UIAlertController class]]) {
+
         UIAlertController *alert = (UIAlertController *)vc;
 
-        NSString *msg = [NSString stringWithFormat:@"%@ %@", alert.title ?: @"", alert.message ?: @""];
+        NSString *msg = [NSString stringWithFormat:@"%@ %@",
+                         alert.title ?: @"",
+                         alert.message ?: @""];
 
         NSArray *keywords = @[
             @"跳转",
@@ -72,56 +80,64 @@ CHOptimizedMethod2(self, void, UIViewController, presentViewController, UIViewCo
 
         for (NSString *key in keywords) {
             if ([msg.lowercaseString containsString:key]) {
-                NSLog(@"🚫 已拦截弹窗: %@", msg);
+                NSLog(@"🚫 拦截弹窗: %@", msg);
                 return;
             }
         }
     }
 
-    CHSuper2(UIViewController, presentViewController, vc, animated, animated, completion, completion);
+    CHSuper3(UIViewController,
+             presentViewController,
+             vc,
+             animated,
+             animated,
+             completion,
+             completion);
 }
 
-#pragma mark - Hook WKWebView 跳转
+#pragma mark - WKWebView
 
 CHDeclareClass(WKWebView)
 
-CHOptimizedMethod1(self, WKNavigation *, WKWebView, loadRequest, NSURLRequest *, request) {
+CHOptimizedMethod1(self, id, WKWebView, loadRequest, NSURLRequest *, request) {
+
     NSString *url = request.URL.absoluteString;
 
     if (kEnableBlock && isBlockedURL(url)) {
-        NSLog(@"🚫 已拦截 WKWebView: %@", url);
+        NSLog(@"🚫 WKWebView 拦截: %@", url);
         return nil;
     }
 
     return CHSuper1(WKWebView, loadRequest, request);
 }
 
-#pragma mark - Hook SFSafariViewController
+#pragma mark - Safari
 
 CHDeclareClass(SFSafariViewController)
 
 CHOptimizedMethod1(self, id, SFSafariViewController, initWithURL, NSURL *, url) {
 
     if (kEnableBlock && isBlockedURL(url.absoluteString)) {
-        NSLog(@"🚫 已拦截 Safari: %@", url);
+        NSLog(@"🚫 Safari 拦截: %@", url);
         return nil;
     }
 
     return CHSuper1(SFSafariViewController, initWithURL, url);
 }
 
-#pragma mark - 构造
+#pragma mark - 构造函数
 
 CHConstructor {
     @autoreleasepool {
-        NSLog(@"🔥 URL/弹窗拦截插件加载成功");
+
+        NSLog(@"🔥 广告/跳转拦截插件已加载");
 
         CHLoadLateClass(UIApplication);
         CHHook1(UIApplication, openURL);
         CHHook2(UIApplication, openURL, options);
 
         CHLoadLateClass(UIViewController);
-        CHHook2(UIViewController, presentViewController, animated, completion);
+        CHHook3(UIViewController, presentViewController, animated, completion);
 
         CHLoadLateClass(WKWebView);
         CHHook1(WKWebView, loadRequest);
