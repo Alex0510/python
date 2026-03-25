@@ -1,265 +1,191 @@
-#import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
-#import <objc/runtime.h>
-#import <StoreKit/StoreKit.h>
+#import <Foundation/Foundation.h>
 
-// ========== Store 类 ==========
-%hook _TtC5Egern5Store
+#pragma mark - 全局
 
-- (BOOL)_isProUnlocked {
-    return YES;
-}
+static BOOL kEnable = YES;
+static NSMutableArray *gLogs;
+static NSMutableArray *gRules;
+static UIWindow *gWindow;
+static UITextView *gTextView;
+static UITextField *gInput;
 
-- (BOOL)isProUnlocked {
-    return YES;
-}
+#define kRulesKey @"URLBlockRules"
 
-- (BOOL)proUnlocked {
-    return YES;
-}
+#pragma mark - 日志
 
-- (BOOL)isPro {
-    return YES;
-}
+static void addLog(NSString *log) {
+    if (!gLogs) gLogs = [NSMutableArray array];
 
-- (BOOL)hasPro {
-    return YES;
-}
+    NSString *line = [NSString stringWithFormat:@"\n%@", log];
+    [gLogs addObject:line];
 
-- (BOOL)isPremium {
-    return YES;
-}
-
-+ (id)shared {
-    id instance = %orig;
-    if (instance) {
-        @try {
-            [instance setValue:@YES forKey:@"_isProUnlocked"];
-            [instance setValue:@YES forKey:@"isProUnlocked"];
-            [instance setValue:@"pro" forKey:@"licenseType"];
-        } @catch (NSException *e) {}
-    }
-    return instance;
-}
-
-%end
-
-// ========== LicenseValidator ==========
-%hook _TtC5Egern16LicenseValidator
-
-- (BOOL)validateLicense {
-    return YES;
-}
-
-- (id)verifyType {
-    return @"pro";
-}
-
-- (BOOL)isPro {
-    return YES;
-}
-
-- (BOOL)hasValidLicense {
-    return YES;
-}
-
-- (BOOL)isLicenseValid {
-    return YES;
-}
-
-- (id)licenseStatus {
-    return @"active";
-}
-
-- (id)licenseType {
-    return @"pro";
-}
-
-%end
-
-// ========== Preferences ==========
-%hook _TtC11EgernCommon11Preferences
-
-- (BOOL)isPro {
-    return YES;
-}
-
-- (BOOL)hasProFeature {
-    return YES;
-}
-
-- (BOOL)proEnabled {
-    return YES;
-}
-
-%end
-
-// ========== KeyValueStore ==========
-%hook _TtC5Egern13KeyValueStore
-
-- (id)objectForKey:(id)key {
-    NSString *keyStr = [NSString stringWithFormat:@"%@", key];
-    
-    if ([keyStr isEqualToString:@"isProUnlocked"] || 
-        [keyStr isEqualToString:@"proUnlocked"] ||
-        [keyStr isEqualToString:@"ProUnlocked"]) {
-        return @YES;
-    }
-    
-    if ([keyStr containsString:@"license"] || [keyStr containsString:@"License"]) {
-        return @{
-            @"status": @"active",
-            @"type": @"pro",
-            @"valid": @YES
-        };
-    }
-    
-    return %orig;
-}
-
-- (BOOL)boolForKey:(id)key {
-    NSString *keyStr = [NSString stringWithFormat:@"%@", key];
-    if ([keyStr isEqualToString:@"isProUnlocked"] || 
-        [keyStr isEqualToString:@"proUnlocked"]) {
-        return YES;
-    }
-    return %orig;
-}
-
-- (void)setObject:(id)object forKey:(id)key {
-    NSString *keyStr = [NSString stringWithFormat:@"%@", key];
-    if ([keyStr containsString:@"pro"] || [keyStr containsString:@"license"]) {
-        return;
-    }
-    %orig;
-}
-
-- (void)setBool:(BOOL)value forKey:(id)key {
-    NSString *keyStr = [NSString stringWithFormat:@"%@", key];
-    if ([keyStr containsString:@"pro"] || [keyStr containsString:@"license"]) {
-        return;
-    }
-    %orig;
-}
-
-%end
-
-// ========== NSUserDefaults ==========
-%hook NSUserDefaults
-
-- (BOOL)boolForKey:(NSString *)key {
-    if ([key isEqualToString:@"isProUnlocked"] || 
-        [key isEqualToString:@"proUnlocked"] ||
-        [key isEqualToString:@"ProUnlocked"]) {
-        return YES;
-    }
-    if ([key containsString:@"license"] && [key containsString:@"valid"]) {
-        return YES;
-    }
-    return %orig;
-}
-
-- (id)objectForKey:(NSString *)key {
-    if ([key isEqualToString:@"isProUnlocked"] || 
-        [key isEqualToString:@"proUnlocked"] ||
-        [key isEqualToString:@"ProUnlocked"]) {
-        return @YES;
-    }
-    if ([key containsString:@"license"]) {
-        return @{
-            @"status": @"active",
-            @"type": @"pro",
-            @"valid": @YES
-        };
-    }
-    return %orig;
-}
-
-- (void)setBool:(BOOL)value forKey:(NSString *)key {
-    if ([key containsString:@"pro"] || [key containsString:@"license"]) {
-        value = YES;
-    }
-    %orig;
-}
-
-- (void)setObject:(id)value forKey:(NSString *)key {
-    if ([key containsString:@"pro"] || [key containsString:@"license"]) {
-        value = @YES;
-    }
-    %orig;
-}
-
-%end
-
-// ========== 构造函数 ==========
-%ctor {
-    NSLog(@"=== Egern Pro Unlock Loaded ===");
-    
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        // 设置 NSUserDefaults
-        NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-        [defaults setBool:YES forKey:@"isProUnlocked"];
-        [defaults setBool:YES forKey:@"proUnlocked"];
-        [defaults setBool:YES forKey:@"ProUnlocked"];
-        [defaults setObject:@"active" forKey:@"licenseStatus"];
-        [defaults setObject:@"pro" forKey:@"licenseType"];
-        [defaults synchronize];
-        
-        // 设置 Store
-        Class storeClass = objc_getClass("_TtC5Egern5Store");
-        if (storeClass) {
-            id store = nil;
-            if ([storeClass respondsToSelector:@selector(shared)]) {
-                store = [storeClass performSelector:@selector(shared)];
-            }
-            if (store) {
-                @try {
-                    [store setValue:@YES forKey:@"_isProUnlocked"];
-                    [store setValue:@YES forKey:@"isProUnlocked"];
-                    [store setValue:@YES forKey:@"proUnlocked"];
-                    [store setValue:@YES forKey:@"isPro"];
-                    NSLog(@"✓ Store configured");
-                } @catch (NSException *e) {
-                    NSLog(@"Store error: %@", e);
-                }
-            }
-        }
-        
-        // 设置 Preferences
-        Class prefsClass = objc_getClass("_TtC11EgernCommon11Preferences");
-        if (prefsClass) {
-            id prefs = nil;
-            if ([prefsClass respondsToSelector:@selector(shared)]) {
-                prefs = [prefsClass performSelector:@selector(shared)];
-            }
-            if (prefs) {
-                @try {
-                    [prefs setValue:@YES forKey:@"isPro"];
-                    [prefs setValue:@YES forKey:@"proUnlocked"];
-                    NSLog(@"✓ Preferences configured");
-                } @catch (NSException *e) {}
-            }
-        }
-        
-        // 设置 KeyValueStore
-        Class kvClass = objc_getClass("_TtC5Egern13KeyValueStore");
-        if (kvClass) {
-            id kv = nil;
-            if ([kvClass respondsToSelector:@selector(shared)]) {
-                kv = [kvClass performSelector:@selector(shared)];
-            }
-            if (kv) {
-                @try {
-                    [kv setValue:@YES forKey:@"isProUnlocked"];
-                    [kv setValue:@YES forKey:@"proUnlocked"];
-                    NSLog(@"✓ KeyValueStore configured");
-                } @catch (NSException *e) {}
-            }
-        }
-        
-        // 发送通知
-        [[NSNotificationCenter defaultCenter] postNotificationName:@"ProUnlockedNotification" object:nil];
-        
-        NSLog(@"=== Egern Pro Unlock Ready ===");
+    dispatch_async(dispatch_get_main_queue(), ^{
+        gTextView.text = [gLogs componentsJoinedByString:@""];
+        [gTextView scrollRangeToVisible:NSMakeRange(gTextView.text.length, 0)];
     });
+}
+
+#pragma mark - 规则存储
+
+static void saveRules() {
+    [[NSUserDefaults standardUserDefaults] setObject:gRules forKey:kRulesKey];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
+static void loadRules() {
+    NSArray *saved = [[NSUserDefaults standardUserDefaults] objectForKey:kRulesKey];
+
+    if (saved) {
+        gRules = [saved mutableCopy];
+    } else {
+        gRules = [@[
+            @"simhaoka.com/phone/index",
+            @"https://t\\.me/.*"
+        ] mutableCopy];
+    }
+}
+
+#pragma mark - URL 匹配
+
+static BOOL matchRule(NSString *url, NSString *rule) {
+    // 正则
+    if ([rule containsString:@"\\"] || [rule containsString:@".*"]) {
+        NSRegularExpression *regex =
+        [NSRegularExpression regularExpressionWithPattern:rule options:0 error:nil];
+
+        NSUInteger matches = [regex numberOfMatchesInString:url options:0 range:NSMakeRange(0, url.length)];
+        return matches > 0;
+    }
+
+    // 普通匹配
+    return [url containsString:rule];
+}
+
+static BOOL shouldBlockURL(NSURL *url) {
+    if (!url) return NO;
+
+    NSString *urlStr = url.absoluteString;
+
+    for (NSString *rule in gRules) {
+        if (matchRule(urlStr, rule)) {
+            addLog([NSString stringWithFormat:@"[BLOCK] %@", urlStr]);
+            return YES;
+        }
+    }
+
+    return NO;
+}
+
+#pragma mark - 悬浮按钮
+
+@interface FloatBtn : UIButton
+@end
+
+@implementation FloatBtn {
+    CGPoint start;
+}
+
+- (instancetype)init {
+    self = [super initWithFrame:CGRectMake(100, 200, 60, 60)];
+    self.backgroundColor = [[UIColor redColor] colorWithAlphaComponent:0.8];
+    self.layer.cornerRadius = 30;
+    [self setTitle:@"ON" forState:UIControlStateNormal];
+    return self;
+}
+
+- (void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event {
+    start = [[touches anyObject] locationInView:self];
+}
+
+- (void)touchesMoved:(NSSet *)touches withEvent:(UIEvent *)event {
+    CGPoint p = [[touches anyObject] locationInView:self];
+    self.center = CGPointMake(self.center.x + p.x - start.x,
+                              self.center.y + p.y - start.y);
+}
+
+@end
+
+#pragma mark - UI
+
+static void setupUI() {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (gWindow) return;
+
+        gWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+        gWindow.windowLevel = UIWindowLevelAlert + 1;
+
+        UIViewController *vc = [UIViewController new];
+        gWindow.rootViewController = vc;
+        gWindow.hidden = NO;
+
+        // 按钮
+        FloatBtn *btn = [FloatBtn new];
+        [vc.view addSubview:btn];
+
+        [btn addTarget:[NSBlockOperation blockOperationWithBlock:^{
+            kEnable = !kEnable;
+            [btn setTitle:(kEnable ? @"ON" : @"OFF") forState:UIControlStateNormal];
+            addLog(kEnable ? @"[状态] 开启" : @"[状态] 关闭");
+        }] action:@selector(main) forControlEvents:UIControlEventTouchUpInside];
+
+        // 输入框
+        gInput = [[UITextField alloc] initWithFrame:CGRectMake(20, 100, 260, 40)];
+        gInput.backgroundColor = UIColor.whiteColor;
+        gInput.placeholder = @"输入规则 (支持正则)";
+        [vc.view addSubview:gInput];
+
+        UIButton *addBtn = [[UIButton alloc] initWithFrame:CGRectMake(290, 100, 60, 40)];
+        addBtn.backgroundColor = UIColor.blueColor;
+        [addBtn setTitle:@"添加" forState:UIControlStateNormal];
+
+        [addBtn addTarget:[NSBlockOperation blockOperationWithBlock:^{
+            NSString *rule = gInput.text;
+            if (rule.length > 0) {
+                [gRules addObject:rule];
+                saveRules();
+                addLog([NSString stringWithFormat:@"[添加规则] %@", rule]);
+                gInput.text = @"";
+            }
+        }] action:@selector(main) forControlEvents:UIControlEventTouchUpInside];
+
+        [vc.view addSubview:addBtn];
+
+        // 日志
+        gTextView = [[UITextView alloc] initWithFrame:CGRectMake(20, 160, 330, 400)];
+        gTextView.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
+        gTextView.textColor = UIColor.greenColor;
+        gTextView.editable = NO;
+
+        [vc.view addSubview:gTextView];
+    });
+}
+
+#pragma mark - Hook
+
+%hook NSURLSession
+
+- (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request
+                            completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))completionHandler {
+
+    if (kEnable && shouldBlockURL(request.URL)) {
+
+        if (completionHandler) {
+            NSError *err = [NSError errorWithDomain:@"block" code:-999 userInfo:nil];
+            completionHandler(nil, nil, err);
+        }
+
+        return nil;
+    }
+
+    return %orig;
+}
+
+%end
+
+#pragma mark - 入口
+
+%ctor {
+    loadRules();
+    setupUI();
 }
