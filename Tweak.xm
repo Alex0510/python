@@ -301,6 +301,26 @@ static void closePanelAction(void) {
     }
 }
 
+#pragma mark - Actions 类 (用于接收按钮事件)
+
+@interface TweakActions : NSObject
++ (void)closePanel;
++ (void)addRule;
++ (void)clearRules;
++ (void)toggleEnable:(UISwitch *)sender;
++ (void)toggleBlockAlerts:(UISwitch *)sender;
++ (void)segmentChanged:(UISegmentedControl *)sender;
+@end
+
+@implementation TweakActions
++ (void)closePanel { closePanelAction(); }
++ (void)addRule { addRuleAction(); }
++ (void)clearRules { clearRulesAction(); }
++ (void)toggleEnable:(UISwitch *)sender { toggleEnableAction(sender); }
++ (void)toggleBlockAlerts:(UISwitch *)sender { toggleBlockAlertsAction(sender); }
++ (void)segmentChanged:(UISegmentedControl *)sender { segmentChangedAction(sender); }
+@end
+
 #pragma mark - 初始化 UI
 
 static void setupUI() {
@@ -345,7 +365,7 @@ static void setupUI() {
         closeBtn.titleLabel.font = [UIFont systemFontOfSize:20];
         closeBtn.backgroundColor = [UIColor colorWithWhite:0.3 alpha:1];
         closeBtn.layer.cornerRadius = 15;
-        [closeBtn addTarget:self action:@selector(closePanel) forControlEvents:UIControlEventTouchUpInside];
+        [closeBtn addTarget:[TweakActions class] action:@selector(closePanel) forControlEvents:UIControlEventTouchUpInside];
         [panel addSubview:closeBtn];
         
         UIView *switchContainer = [[UIView alloc] initWithFrame:CGRectMake(15, 55, panelWidth - 30, 50)];
@@ -361,7 +381,7 @@ static void setupUI() {
         
         enableSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(switchContainer.frame.size.width - 65, 10, 50, 30)];
         enableSwitch.on = kEnable;
-        [enableSwitch addTarget:self action:@selector(toggleEnable:) forControlEvents:UIControlEventValueChanged];
+        [enableSwitch addTarget:[TweakActions class] action:@selector(toggleEnable:) forControlEvents:UIControlEventValueChanged];
         [switchContainer addSubview:enableSwitch];
         
         UIView *alertContainer = [[UIView alloc] initWithFrame:CGRectMake(15, 115, panelWidth - 30, 50)];
@@ -377,7 +397,7 @@ static void setupUI() {
         
         alertSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(alertContainer.frame.size.width - 65, 10, 50, 30)];
         alertSwitch.on = blockAlerts;
-        [alertSwitch addTarget:self action:@selector(toggleBlockAlerts:) forControlEvents:UIControlEventValueChanged];
+        [alertSwitch addTarget:[TweakActions class] action:@selector(toggleBlockAlerts:) forControlEvents:UIControlEventValueChanged];
         [alertContainer addSubview:alertSwitch];
         
         UILabel *ruleLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 180, 100, 25)];
@@ -400,7 +420,7 @@ static void setupUI() {
         addBtn.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:0.9 alpha:1];
         addBtn.layer.cornerRadius = 8;
         addBtn.titleLabel.font = [UIFont boldSystemFontOfSize:14];
-        [addBtn addTarget:self action:@selector(addRule) forControlEvents:UIControlEventTouchUpInside];
+        [addBtn addTarget:[TweakActions class] action:@selector(addRule) forControlEvents:UIControlEventTouchUpInside];
         [panel addSubview:addBtn];
         
         UILabel *listLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 260, 100, 25)];
@@ -414,13 +434,13 @@ static void setupUI() {
         clearBtn.titleLabel.font = [UIFont systemFontOfSize:12];
         clearBtn.backgroundColor = [UIColor colorWithRed:0.8 green:0.2 blue:0.2 alpha:1];
         clearBtn.layer.cornerRadius = 5;
-        [clearBtn addTarget:self action:@selector(clearRules) forControlEvents:UIControlEventTouchUpInside];
+        [clearBtn addTarget:[TweakActions class] action:@selector(clearRules) forControlEvents:UIControlEventTouchUpInside];
         [panel addSubview:clearBtn];
         
         UISegmentedControl *segment = [[UISegmentedControl alloc] initWithItems:@[@"日志", @"规则列表"]];
         segment.frame = CGRectMake(15, 295, panelWidth - 30, 30);
         segment.selectedSegmentIndex = 0;
-        [segment addTarget:self action:@selector(segmentChanged:) forControlEvents:UIControlEventValueChanged];
+        [segment addTarget:[TweakActions class] action:@selector(segmentChanged:) forControlEvents:UIControlEventValueChanged];
         [panel addSubview:segment];
         
         logView = [[UITextView alloc] initWithFrame:CGRectMake(15, 335, panelWidth - 30, 190)];
@@ -452,26 +472,6 @@ static void setupUI() {
         addLog([NSString stringWithFormat:@"弹窗屏蔽: %@", blockAlerts ? @"开启" : @"关闭"]);
     });
 }
-
-#pragma mark - Actions (使用 Logos 的 %ctor 无法直接添加方法，需要通过 Category)
-
-@interface TweakActions : NSObject
-+ (void)closePanel;
-+ (void)addRule;
-+ (void)clearRules;
-+ (void)toggleEnable:(UISwitch *)sender;
-+ (void)toggleBlockAlerts:(UISwitch *)sender;
-+ (void)segmentChanged:(UISegmentedControl *)sender;
-@end
-
-@implementation TweakActions
-+ (void)closePanel { closePanelAction(); }
-+ (void)addRule { addRuleAction(); }
-+ (void)clearRules { clearRulesAction(); }
-+ (void)toggleEnable:(UISwitch *)sender { toggleEnableAction(sender); }
-+ (void)toggleBlockAlerts:(UISwitch *)sender { toggleBlockAlertsAction(sender); }
-+ (void)segmentChanged:(UISegmentedControl *)sender { segmentChangedAction(sender); }
-@end
 
 #pragma mark - Hook
 
@@ -539,40 +539,4 @@ static void setupUI() {
 %ctor {
     loadRules();
     setupUI();
-    
-    // 为按钮添加 target
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        // 通过遍历找到按钮并添加 target
-        if (panel) {
-            for (UIView *subview in panel.subviews) {
-                if ([subview isKindOfClass:[UIButton class]]) {
-                    UIButton *btn = (UIButton *)subview;
-                    NSString *title = [btn titleForState:UIControlStateNormal];
-                    if ([title isEqualToString:@"✕"]) {
-                        [btn removeTarget:nil action:NULL forControlEvents:UIControlEventAllEvents];
-                        [btn addTarget:[TweakActions class] action:@selector(closePanel) forControlEvents:UIControlEventTouchUpInside];
-                    } else if ([title isEqualToString:@"添加"]) {
-                        [btn removeTarget:nil action:NULL forControlEvents:UIControlEventAllEvents];
-                        [btn addTarget:[TweakActions class] action:@selector(addRule) forControlEvents:UIControlEventTouchUpInside];
-                    } else if ([title isEqualToString:@"清空"]) {
-                        [btn removeTarget:nil action:NULL forControlEvents:UIControlEventAllEvents];
-                        [btn addTarget:[TweakActions class] action:@selector(clearRules) forControlEvents:UIControlEventTouchUpInside];
-                    }
-                } else if ([subview isKindOfClass:[UISwitch class]]) {
-                    UISwitch *sw = (UISwitch *)subview;
-                    if (sw == enableSwitch) {
-                        [sw removeTarget:nil action:NULL forControlEvents:UIControlEventAllEvents];
-                        [sw addTarget:[TweakActions class] action:@selector(toggleEnable:) forControlEvents:UIControlEventValueChanged];
-                    } else if (sw == alertSwitch) {
-                        [sw removeTarget:nil action:NULL forControlEvents:UIControlEventAllEvents];
-                        [sw addTarget:[TweakActions class] action:@selector(toggleBlockAlerts:) forControlEvents:UIControlEventValueChanged];
-                    }
-                } else if ([subview isKindOfClass:[UISegmentedControl class]]) {
-                    UISegmentedControl *seg = (UISegmentedControl *)subview;
-                    [seg removeTarget:nil action:NULL forControlEvents:UIControlEventAllEvents];
-                    [seg addTarget:[TweakActions class] action:@selector(segmentChanged:) forControlEvents:UIControlEventValueChanged];
-                }
-            }
-        }
-    });
 }
