@@ -1,14 +1,11 @@
-ARCHS = arm64
+ARCHS = arm64 arm64e
 TARGET = iphone:clang:latest:15.0
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = EgernProUnlock
-EgernProUnlock_FILES = Tweak.xm
-EgernProUnlock_CFLAGS = -fobjc-arc
-EgernProUnlock_FRAMEWORKS = UIKit Foundation StoreKit
+TWEAK_NAME = URLBlockerPro
+
+URLBlockerPro_FILES = Tweak.xm
+URLBlockerPro_FRAMEWORKS = UIKit Foundation
 
 include $(THEOS_MAKE_PATH)/tweak.mk
-
-after-install::
-	install.exec "killall -9 Egern"
