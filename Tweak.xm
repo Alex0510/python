@@ -1,6 +1,7 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import <WebKit/WebKit.h>
+#import <SafariServices/SafariServices.h>
 
 #pragma mark - 穿透 Window
 
@@ -46,7 +47,7 @@ static BOOL isUISetup = NO;
 #define kBlockAlertsKey @"blockAlerts"
 #define kEnableKey @"enable"
 
-#pragma mark - 日志（早期可用）
+#pragma mark - 日志
 
 static void addLog(NSString *log) {
     if (!log) return;
@@ -71,7 +72,6 @@ static void addLog(NSString *log) {
             [logs removeObjectsInRange:NSMakeRange(0, 200)];
         }
         
-        // 如果 UI 已准备好，更新显示
         if (isUISetup) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 @try {
@@ -87,7 +87,7 @@ static void addLog(NSString *log) {
     });
 }
 
-#pragma mark - 规则（早期加载）
+#pragma mark - 规则
 
 static void loadRules() {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
@@ -95,7 +95,6 @@ static void loadRules() {
     if (arr && arr.count > 0) {
         rules = [arr mutableCopy];
     } else {
-        // 默认规则 - 立即生效
         rules = [@[
             @"simhaoka.com",
             @"t\\.me/.*",
@@ -104,8 +103,7 @@ static void loadRules() {
             @"googlesyndication\\.com",
             @"adservice\\.google\\.com",
             @"pagead2\\.googlesyndication\\.com",
-            @"ad\\.doubleclick\\.net",
-            @"google-analytics\\.com"
+            @"ad\\.doubleclick\\.net"
         ] mutableCopy];
         [defaults setObject:rules forKey:kRulesKey];
     }
@@ -113,7 +111,7 @@ static void loadRules() {
     if ([defaults objectForKey:kEnableKey]) {
         kEnable = [defaults boolForKey:kEnableKey];
     } else {
-        kEnable = YES;  // 默认开启
+        kEnable = YES;
         [defaults setBool:YES forKey:kEnableKey];
     }
     
@@ -123,7 +121,7 @@ static void loadRules() {
         [defaults setBool:YES forKey:kBlockAlertsKey];
     }
     
-    addLog(@"📋 规则加载完成");
+    addLog(@"规则加载完成");
 }
 
 static void saveRules() {
@@ -136,13 +134,12 @@ static void saveSettings() {
     [defaults setBool:blockAlerts forKey:kBlockAlertsKey];
 }
 
-#pragma mark - 匹配（早期可用，高性能）
+#pragma mark - 匹配
 
 static BOOL match(NSString *url, NSString *rule) {
     if (!url || !rule) return NO;
     
     @try {
-        // 快速检查：如果是普通字符串包含
         if (![rule containsString:@"\\"] && ![rule containsString:@"."] && 
             ![rule containsString:@"*"] && ![rule containsString:@"^"] && 
             ![rule containsString:@"$"] && ![rule containsString:@"+"] && 
@@ -152,7 +149,6 @@ static BOOL match(NSString *url, NSString *rule) {
             return [url localizedCaseInsensitiveContainsString:rule];
         }
         
-        // 正则表达式匹配
         NSError *error = nil;
         NSRegularExpression *re = [NSRegularExpression regularExpressionWithPattern:rule 
                                                                              options:NSRegularExpressionCaseInsensitive 
@@ -171,7 +167,6 @@ static BOOL shouldBlock(NSURL *url) {
     NSString *absoluteURL = url.absoluteString;
     NSString *host = url.host;
     
-    // 快速检查
     for (NSString *rule in rules) {
         if (!rule || rule.length == 0) continue;
         
@@ -365,7 +360,7 @@ static BOOL shouldBlock(NSURL *url) {
 
 @end
 
-#pragma mark - 初始化 UI（延迟到 App 启动后）
+#pragma mark - 初始化 UI
 
 static void setupUI() {
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -380,11 +375,9 @@ static void setupUI() {
             vc.view.backgroundColor = [UIColor clearColor];
             gWindow.rootViewController = vc;
             
-            // 悬浮球
             ball = [FloatBall new];
             [vc.view addSubview:ball];
             
-            // 面板
             CGFloat panelWidth = 360;
             CGFloat panelHeight = 580;
             CGFloat panelX = (UIScreen.mainScreen.bounds.size.width - panelWidth) / 2;
@@ -513,7 +506,6 @@ static void setupUI() {
             ruleListView.tag = 1001;
             [panel addSubview:ruleListView];
             
-            // 更新规则列表
             NSMutableString *ruleText = [NSMutableString string];
             for (int i = 0; i < rules.count; i++) {
                 [ruleText appendFormat:@"%d. %@\n", i + 1, rules[i]];
@@ -522,10 +514,10 @@ static void setupUI() {
             
             isUISetup = YES;
             
-            addLog(@"🎨 UI 已加载");
-            addLog([NSString stringWithFormat:@"🔘 全局屏蔽: %@", kEnable ? @"开启" : @"关闭"]);
-            addLog([NSString stringWithFormat:@"🔘 弹窗屏蔽: %@", blockAlerts ? @"开启" : @"关闭"]);
-            addLog([NSString stringWithFormat:@"📋 当前规则数: %lu", (unsigned long)rules.count]);
+            addLog(@"UI 已加载");
+            addLog([NSString stringWithFormat:@"全局屏蔽: %@", kEnable ? @"开启" : @"关闭"]);
+            addLog([NSString stringWithFormat:@"弹窗屏蔽: %@", blockAlerts ? @"开启" : @"关闭"]);
+            addLog([NSString stringWithFormat:@"当前规则数: %lu", (unsigned long)rules.count]);
             
         } @catch (NSException *exception) {
             NSLog(@"AdBlocker: Setup UI failed - %@", exception);
@@ -533,9 +525,8 @@ static void setupUI() {
     });
 }
 
-#pragma mark - 多种 Hook（在 %ctor 中立即生效）
+#pragma mark - Hook (移除 UIWebView)
 
-// Hook NSURLSession - 最常用的网络请求
 %hook NSURLSession
 
 - (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))completionHandler {
@@ -554,7 +545,6 @@ static void setupUI() {
 
 %end
 
-// Hook NSURLConnection
 %hook NSURLConnection
 
 + (NSURLConnection *)connectionWithRequest:(NSURLRequest *)request delegate:(id)delegate {
@@ -567,7 +557,6 @@ static void setupUI() {
 
 %end
 
-// Hook WKWebView
 %hook WKWebView
 
 - (WKNavigation *)loadRequest:(NSURLRequest *)request {
@@ -580,7 +569,6 @@ static void setupUI() {
 
 %end
 
-// Hook WKWebView 决策代理
 %hook WKNavigationDelegate
 
 - (void)webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
@@ -597,20 +585,6 @@ static void setupUI() {
 
 %end
 
-// Hook UIWebView
-%hook UIWebView
-
-- (void)loadRequest:(NSURLRequest *)request {
-    if (kEnable && request.URL && shouldBlock(request.URL)) {
-        addLog([NSString stringWithFormat:@"❌ 拦截 UIWebView: %@", request.URL]);
-        return;
-    }
-    %orig;
-}
-
-%end
-
-// Hook SFSafariViewController
 %hook SFSafariViewController
 
 - (instancetype)initWithURL:(NSURL *)url entersReaderIfAvailable:(BOOL)entersReaderIfAvailable {
@@ -623,7 +597,6 @@ static void setupUI() {
 
 %end
 
-// Hook UIAlertController 弹窗屏蔽
 %hook UIAlertController
 
 - (void)viewDidLoad {
@@ -654,19 +627,15 @@ static void setupUI() {
 
 %end
 
-#pragma mark - 入口（App 启动时立即执行）
+#pragma mark - 入口
 
 %ctor {
-    // 1. 立即加载规则
     loadRules();
-    
-    // 2. 添加启动日志
     addLog(@"🚀 AdBlocker 插件已加载");
     addLog([NSString stringWithFormat:@"🔘 初始状态: 全局屏蔽=%@, 弹窗屏蔽=%@", 
             kEnable ? @"开启" : @"关闭", 
             blockAlerts ? @"开启" : @"关闭"]);
     
-    // 3. 延迟初始化 UI（避免影响启动速度）
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         setupUI();
     });
