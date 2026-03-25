@@ -1,4 +1,5 @@
 #import <UIKit/UIKit.h>
+#import <objc/runtime.h>
 
 #pragma mark - 穿透 Window
 
@@ -13,7 +14,9 @@
     // 只让有交互的控件接收事件
     if ([view isKindOfClass:[UIButton class]] ||
         [view isKindOfClass:[UITextField class]] ||
-        [view isKindOfClass:[UITextView class]]) {
+        [view isKindOfClass:[UITextView class]] ||
+        [view isKindOfClass:[UISwitch class]] ||
+        [view isKindOfClass:[UISegmentedControl class]]) {
         return view;
     }
 
@@ -29,6 +32,8 @@ static UIView *panel;
 static UIButton *ball;
 static UITextView *logView;
 static UITextField *input;
+static UISwitch *enableSwitch;
+static UISwitch *alertSwitch;
 
 static BOOL isOpen = NO;
 static BOOL kEnable = YES;
@@ -38,6 +43,12 @@ static NSMutableArray *rules;
 
 #define kRulesKey @"rules"
 #define kBlockAlertsKey @"blockAlerts"
+#define kEnableKey @"enable"
+
+#pragma mark - 前置声明
+
+static void togglePanel(void);
+static void addLog(NSString *log);
 
 #pragma mark - 日志
 
@@ -52,22 +63,29 @@ static void addLog(NSString *log) {
     }
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        logView.text = [logs componentsJoinedByString:@""];
-        [logView scrollRangeToVisible:NSMakeRange(logView.text.length, 0)];
+        if (logView) {
+            logView.text = [logs componentsJoinedByString:@""];
+            [logView scrollRangeToVisible:NSMakeRange(logView.text.length, 0)];
+        }
     });
 }
 
 #pragma mark - 规则
 
 static void loadRules() {
-    NSArray *arr = [[NSUserDefaults standardUserDefaults] objectForKey:kRulesKey];
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    NSArray *arr = [defaults objectForKey:kRulesKey];
     rules = arr ? [arr mutableCopy] : [@[@"simhaoka.com", @"t\\.me/.*"] mutableCopy];
     
-    // 加载弹窗屏蔽设置
-    blockAlerts = [[NSUserDefaults standardUserDefaults] boolForKey:kBlockAlertsKey];
-    if (![[NSUserDefaults standardUserDefaults] objectForKey:kBlockAlertsKey]) {
-        blockAlerts = YES;  // 默认开启
-        [[NSUserDefaults standardUserDefaults] setBool:YES forKey:kBlockAlertsKey];
+    // 加载设置
+    if ([defaults objectForKey:kEnableKey]) {
+        kEnable = [defaults boolForKey:kEnableKey];
+    }
+    
+    blockAlerts = [defaults boolForKey:kBlockAlertsKey];
+    if (![defaults objectForKey:kBlockAlertsKey]) {
+        blockAlerts = YES;
+        [defaults setBool:YES forKey:kBlockAlertsKey];
     }
 }
 
@@ -75,14 +93,18 @@ static void saveRules() {
     [[NSUserDefaults standardUserDefaults] setObject:rules forKey:kRulesKey];
 }
 
-static void saveBlockAlertsSetting() {
-    [[NSUserDefaults standardUserDefaults] setBool:blockAlerts forKey:kBlockAlertsKey];
+static void saveSettings() {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    [defaults setBool:kEnable forKey:kEnableKey];
+    [defaults setBool:blockAlerts forKey:kBlockAlertsKey];
 }
 
 #pragma mark - 匹配
 
 static BOOL match(NSString *url, NSString *rule) {
-    if ([rule containsString:@"\\"] || [rule containsString:@".*"] || [rule containsString:@"^"] || [rule containsString:@"$"]) {
+    if ([rule containsString:@"\\"] || [rule containsString:@".*"] || 
+        [rule containsString:@"^"] || [rule containsString:@"$"] ||
+        [rule containsString:@"+"] || [rule containsString:@"?"]) {
         NSError *error = nil;
         NSRegularExpression *re = [NSRegularExpression regularExpressionWithPattern:rule options:0 error:&error];
         if (error) {
@@ -95,6 +117,8 @@ static BOOL match(NSString *url, NSString *rule) {
 }
 
 static BOOL shouldBlock(NSURL *url) {
+    if (!kEnable) return NO;
+    
     NSString *u = url.absoluteString;
     
     for (NSString *r in rules) {
@@ -216,13 +240,84 @@ static void togglePanel() {
     }
 }
 
+#pragma mark - Action 函数
+
+static void addRuleAction(void) {
+    if (input.text.length > 0) {
+        [rules addObject:input.text];
+        saveRules();
+        addLog([NSString stringWithFormat:@"[添加规则] %@", input.text]);
+        input.text = @"";
+        
+        // 更新规则列表显示
+        UITextView *ruleListView = (UITextView *)[panel viewWithTag:1001];
+        if (ruleListView) {
+            NSMutableString *ruleText = [NSMutableString string];
+            for (int i = 0; i < rules.count; i++) {
+                [ruleText appendFormat:@"%d. %@\n", i + 1, rules[i]];
+            }
+            ruleListView.text = ruleText.length ? ruleText : @"暂无规则";
+        }
+    }
+}
+
+static void clearRulesAction(void) {
+    [rules removeAllObjects];
+    saveRules();
+    addLog(@"已清空所有规则");
+    
+    UITextView *ruleListView = (UITextView *)[panel viewWithTag:1001];
+    if (ruleListView) {
+        ruleListView.text = @"暂无规则";
+    }
+}
+
+static void toggleEnableAction(UISwitch *sender) {
+    kEnable = sender.isOn;
+    saveSettings();
+    addLog([NSString stringWithFormat:@"全局屏蔽: %@", kEnable ? @"开启" : @"关闭"]);
+}
+
+static void toggleBlockAlertsAction(UISwitch *sender) {
+    blockAlerts = sender.isOn;
+    saveSettings();
+    addLog([NSString stringWithFormat:@"弹窗屏蔽: %@", blockAlerts ? @"开启" : @"关闭"]);
+}
+
+static void segmentChangedAction(UISegmentedControl *sender) {
+    UITextView *ruleListView = (UITextView *)[panel viewWithTag:1001];
+    
+    if (sender.selectedSegmentIndex == 0) {
+        // 显示日志
+        ruleListView.hidden = YES;
+        logView.hidden = NO;
+    } else {
+        // 显示规则列表
+        ruleListView.hidden = NO;
+        logView.hidden = YES;
+        
+        // 更新规则列表内容
+        NSMutableString *ruleText = [NSMutableString string];
+        for (int i = 0; i < rules.count; i++) {
+            [ruleText appendFormat:@"%d. %@\n", i + 1, rules[i]];
+        }
+        ruleListView.text = ruleText.length ? ruleText : @"暂无规则";
+    }
+}
+
+static void closePanelAction(void) {
+    if (isOpen) {
+        togglePanel();
+    }
+}
+
 #pragma mark - 初始化 UI
 
 static void setupUI() {
     dispatch_async(dispatch_get_main_queue(), ^{
         // 创建穿透窗口
         gWindow = [[PassWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
-        gWindow.windowLevel = UIWindowLevelAlert + 100;  // 提高层级确保在最前
+        gWindow.windowLevel = UIWindowLevelAlert + 100;
         gWindow.backgroundColor = [UIColor clearColor];
         gWindow.userInteractionEnabled = YES;
 
@@ -236,8 +331,8 @@ static void setupUI() {
         [vc.view addSubview:ball];
 
         // 面板容器
-        CGFloat panelWidth = 320;
-        CGFloat panelHeight = 500;
+        CGFloat panelWidth = 340;
+        CGFloat panelHeight = 540;
         CGFloat panelX = (UIScreen.mainScreen.bounds.size.width - panelWidth) / 2;
         CGFloat panelY = (UIScreen.mainScreen.bounds.size.height - panelHeight) / 2;
         
@@ -265,10 +360,10 @@ static void setupUI() {
         closeBtn.titleLabel.font = [UIFont systemFontOfSize:20];
         closeBtn.backgroundColor = [UIColor colorWithWhite:0.3 alpha:1];
         closeBtn.layer.cornerRadius = 15;
-        [closeBtn addTarget:nil action:@selector(closePanelAction) forControlEvents:UIControlEventTouchUpInside];
+        [closeBtn addTarget:nil action:@selector(closePanel) forControlEvents:UIControlEventTouchUpInside];
         [panel addSubview:closeBtn];
         
-        // 开关区域
+        // 开关区域 - 全局屏蔽
         UIView *switchContainer = [[UIView alloc] initWithFrame:CGRectMake(15, 55, panelWidth - 30, 50)];
         switchContainer.backgroundColor = [UIColor colorWithWhite:0.2 alpha:0.5];
         switchContainer.layer.cornerRadius = 8;
@@ -280,27 +375,27 @@ static void setupUI() {
         enableLabel.font = [UIFont systemFontOfSize:14];
         [switchContainer addSubview:enableLabel];
         
-        UISwitch *enableSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(switchContainer.frame.size.width - 65, 10, 50, 30)];
+        enableSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(switchContainer.frame.size.width - 65, 10, 50, 30)];
         enableSwitch.on = kEnable;
         [enableSwitch addTarget:nil action:@selector(toggleEnable:) forControlEvents:UIControlEventValueChanged];
         [switchContainer addSubview:enableSwitch];
         
-        UILabel *alertLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 15, 100, 20)];
-        alertLabel.text = @"屏蔽弹窗";
-        alertLabel.textColor = UIColor.whiteColor;
-        alertLabel.font = [UIFont systemFontOfSize:14];
-        
-        UISwitch *alertSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(switchContainer.frame.size.width - 65, 10, 50, 30)];
-        alertSwitch.on = blockAlerts;
-        [alertSwitch addTarget:nil action:@selector(toggleBlockAlerts:) forControlEvents:UIControlEventValueChanged];
-        
-        // 添加第二个开关到容器
+        // 弹窗屏蔽开关
         UIView *alertContainer = [[UIView alloc] initWithFrame:CGRectMake(15, 115, panelWidth - 30, 50)];
         alertContainer.backgroundColor = [UIColor colorWithWhite:0.2 alpha:0.5];
         alertContainer.layer.cornerRadius = 8;
-        [alertContainer addSubview:alertLabel];
-        [alertContainer addSubview:alertSwitch];
         [panel addSubview:alertContainer];
+        
+        UILabel *alertLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 15, 100, 20)];
+        alertLabel.text = @"屏蔽插件弹窗";
+        alertLabel.textColor = UIColor.whiteColor;
+        alertLabel.font = [UIFont systemFontOfSize:14];
+        [alertContainer addSubview:alertLabel];
+        
+        alertSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(alertContainer.frame.size.width - 65, 10, 50, 30)];
+        alertSwitch.on = blockAlerts;
+        [alertSwitch addTarget:nil action:@selector(toggleBlockAlerts:) forControlEvents:UIControlEventValueChanged];
+        [alertContainer addSubview:alertSwitch];
         
         // 规则输入区域
         UILabel *ruleLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 180, 100, 25)];
@@ -324,7 +419,7 @@ static void setupUI() {
         addBtn.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:0.9 alpha:1];
         addBtn.layer.cornerRadius = 8;
         addBtn.titleLabel.font = [UIFont boldSystemFontOfSize:14];
-        [addBtn addTarget:nil action:@selector(addRuleAction) forControlEvents:UIControlEventTouchUpInside];
+        [addBtn addTarget:nil action:@selector(addRule) forControlEvents:UIControlEventTouchUpInside];
         [panel addSubview:addBtn];
         
         // 规则列表标题
@@ -340,7 +435,7 @@ static void setupUI() {
         clearBtn.titleLabel.font = [UIFont systemFontOfSize:12];
         clearBtn.backgroundColor = [UIColor colorWithRed:0.8 green:0.2 blue:0.2 alpha:1];
         clearBtn.layer.cornerRadius = 5;
-        [clearBtn addTarget:nil action:@selector(clearRulesAction) forControlEvents:UIControlEventTouchUpInside];
+        [clearBtn addTarget:nil action:@selector(clearRules) forControlEvents:UIControlEventTouchUpInside];
         [panel addSubview:clearBtn];
         
         // 日志/规则切换
@@ -351,7 +446,7 @@ static void setupUI() {
         [panel addSubview:segment];
         
         // 日志视图
-        logView = [[UITextView alloc] initWithFrame:CGRectMake(15, 335, panelWidth - 30, 150)];
+        logView = [[UITextView alloc] initWithFrame:CGRectMake(15, 335, panelWidth - 30, 190)];
         logView.backgroundColor = [UIColor colorWithWhite:0.05 alpha:1];
         logView.textColor = [UIColor colorWithRed:0.3 green:0.9 blue:0.3 alpha:1];
         logView.font = [UIFont fontWithName:@"Menlo" size:10];
@@ -360,7 +455,7 @@ static void setupUI() {
         [panel addSubview:logView];
         
         // 规则列表视图（隐藏）
-        UITextView *ruleListView = [[UITextView alloc] initWithFrame:CGRectMake(15, 335, panelWidth - 30, 150)];
+        UITextView *ruleListView = [[UITextView alloc] initWithFrame:CGRectMake(15, 335, panelWidth - 30, 190)];
         ruleListView.backgroundColor = [UIColor colorWithWhite:0.05 alpha:1];
         ruleListView.textColor = UIColor.whiteColor;
         ruleListView.font = [UIFont fontWithName:@"Menlo" size:11];
@@ -371,118 +466,58 @@ static void setupUI() {
         [panel addSubview:ruleListView];
         
         // 更新规则列表显示
-        void (^updateRuleList)(void) = ^{
-            NSMutableString *ruleText = [NSMutableString string];
-            for (int i = 0; i < rules.count; i++) {
-                [ruleText appendFormat:@"%d. %@\n", i + 1, rules[i]];
-            }
-            ruleListView.text = ruleText.length ? ruleText : @"暂无规则";
-        };
-        updateRuleList();
-        
-        // 保存规则列表更新block
-        objc_setAssociatedObject(panel, "updateRuleList", updateRuleList, OBJC_ASSOCIATION_COPY_NONATOMIC);
+        NSMutableString *ruleText = [NSMutableString string];
+        for (int i = 0; i < rules.count; i++) {
+            [ruleText appendFormat:@"%d. %@\n", i + 1, rules[i]];
+        }
+        ruleListView.text = ruleText.length ? ruleText : @"暂无规则";
         
         // 添加初始日志
-        addLog(@"插件已启动");
+        addLog(@"插件已启动 v1.0");
+        addLog([NSString stringWithFormat:@"全局屏蔽: %@", kEnable ? @"开启" : @"关闭"]);
         addLog([NSString stringWithFormat:@"弹窗屏蔽: %@", blockAlerts ? @"开启" : @"关闭"]);
     });
 }
 
-#pragma mark - Actions
-
-@interface NSObject (Action)
-- (void)togglePanelAction;
-- (void)closePanelAction;
-- (void)addRuleAction;
-- (void)clearRulesAction;
+// 为按钮添加方法（通过消息转发）
+@interface UIResponder (TweakActions)
+- (void)closePanel;
+- (void)addRule;
+- (void)clearRules;
 - (void)toggleEnable:(UISwitch *)sender;
 - (void)toggleBlockAlerts:(UISwitch *)sender;
 - (void)segmentChanged:(UISegmentedControl *)sender;
 @end
 
-@implementation NSObject (Action)
+@implementation UIResponder (TweakActions)
 
-- (void)togglePanelAction {
-    togglePanel();
+- (void)closePanel {
+    closePanelAction();
 }
 
-- (void)closePanelAction {
-    if (isOpen) {
-        togglePanel();
-    }
+- (void)addRule {
+    addRuleAction();
 }
 
-- (void)addRuleAction {
-    if (input.text.length > 0) {
-        [rules addObject:input.text];
-        saveRules();
-        addLog([NSString stringWithFormat:@"[添加规则] %@", input.text]);
-        input.text = @"";
-        
-        // 更新规则列表
-        UITextView *ruleListView = (UITextView *)[panel viewWithTag:1001];
-        NSMutableString *ruleText = [NSMutableString string];
-        for (int i = 0; i < rules.count; i++) {
-            [ruleText appendFormat:@"%d. %@\n", i + 1, rules[i]];
-        }
-        ruleListView.text = ruleText.length ? ruleText : @"暂无规则";
-        
-        // 如果当前显示规则列表，刷新显示
-        UISegmentedControl *segment = (UISegmentedControl *)[panel.subviews filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(id obj, NSDictionary *bindings) {
-            return [obj isKindOfClass:[UISegmentedControl class]];
-        }]].firstObject;
-        if (segment && segment.selectedSegmentIndex == 1) {
-            ruleListView.hidden = NO;
-            logView.hidden = YES;
-        }
-    }
-}
-
-- (void)clearRulesAction {
-    [rules removeAllObjects];
-    saveRules();
-    addLog(@"已清空所有规则");
-    
-    UITextView *ruleListView = (UITextView *)[panel viewWithTag:1001];
-    ruleListView.text = @"暂无规则";
+- (void)clearRules {
+    clearRulesAction();
 }
 
 - (void)toggleEnable:(UISwitch *)sender {
-    kEnable = sender.isOn;
-    addLog([NSString stringWithFormat:@"全局屏蔽: %@", kEnable ? @"开启" : @"关闭"]);
+    toggleEnableAction(sender);
 }
 
 - (void)toggleBlockAlerts:(UISwitch *)sender {
-    blockAlerts = sender.isOn;
-    saveBlockAlertsSetting();
-    addLog([NSString stringWithFormat:@"弹窗屏蔽: %@", blockAlerts ? @"开启" : @"关闭"]);
+    toggleBlockAlertsAction(sender);
 }
 
 - (void)segmentChanged:(UISegmentedControl *)sender {
-    UITextView *ruleListView = (UITextView *)[panel viewWithTag:1001];
-    
-    if (sender.selectedSegmentIndex == 0) {
-        // 显示日志
-        ruleListView.hidden = YES;
-        logView.hidden = NO;
-    } else {
-        // 显示规则列表
-        ruleListView.hidden = NO;
-        logView.hidden = YES;
-        
-        // 更新规则列表内容
-        NSMutableString *ruleText = [NSMutableString string];
-        for (int i = 0; i < rules.count; i++) {
-            [ruleText appendFormat:@"%d. %@\n", i + 1, rules[i]];
-        }
-        ruleListView.text = ruleText.length ? ruleText : @"暂无规则";
-    }
+    segmentChangedAction(sender);
 }
 
 @end
 
-#pragma mark - 弹窗屏蔽 Hook
+#pragma mark - 弹窗屏蔽 Hook (只使用 UIAlertController)
 
 %hook UIAlertController
 
@@ -497,7 +532,7 @@ static void setupUI() {
         NSString *fullText = [NSString stringWithFormat:@"%@ %@", title, message];
         
         // 检查是否包含常见广告关键词
-        NSArray *keywords = @[@"评分", @"评价", @"好评", @"去设置", @"打开通知", @"会员", @"VIP", @"订阅", @"优惠", @"促销", @"推荐", @"广告"];
+        NSArray *keywords = @[@"评分", @"评价", @"好评", @"去设置", @"打开通知", @"会员", @"VIP", @"订阅", @"优惠", @"促销", @"推荐", @"广告", @"点赞", @"分享"];
         
         BOOL shouldBlockAlert = NO;
         for (NSString *keyword in keywords) {
@@ -507,9 +542,8 @@ static void setupUI() {
             }
         }
         
-        // 也检查规则匹配（如果URL中包含规则）
+        // 也检查规则匹配
         if (!shouldBlockAlert) {
-            // 获取调用栈，尝试获取URL信息（简化处理）
             for (NSString *rule in rules) {
                 if ([fullText containsString:rule] || [title containsString:rule] || [message containsString:rule]) {
                     shouldBlockAlert = YES;
@@ -519,35 +553,14 @@ static void setupUI() {
         }
         
         if (shouldBlockAlert) {
-            addLog(@"[BLOCK ALERT] 已屏蔽插件弹窗");
-            // 直接dismiss弹窗
-            [self dismissViewControllerAnimated:NO completion:nil];
+            addLog(@"[BLOCK ALERT] 已屏蔽应用弹窗");
+            // 直接 dismiss 弹窗
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self dismissViewControllerAnimated:NO completion:nil];
+            });
             return;
         }
     }
-}
-
-%end
-
-// 同时Hook UIAlertView（iOS 9及以下兼容）
-%hook UIAlertView
-
-- (void)show {
-    if (blockAlerts && kEnable) {
-        NSString *title = self.title ?: @"";
-        NSString *message = self.message ?: @"";
-        NSString *fullText = [NSString stringWithFormat:@"%@ %@", title, message];
-        
-        NSArray *keywords = @[@"评分", @"评价", @"好评", @"去设置", @"打开通知", @"会员", @"VIP", @"订阅", @"优惠", @"促销", @"推荐", @"广告"];
-        
-        for (NSString *keyword in keywords) {
-            if ([fullText containsString:keyword]) {
-                addLog(@"[BLOCK ALERT] 已屏蔽插件弹窗");
-                return;
-            }
-        }
-    }
-    %orig;
 }
 
 %end
