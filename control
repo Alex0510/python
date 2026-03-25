@@ -1,9 +1,9 @@
 Package: com.eric.adblock
-Name: adblock
+Name: AdBlockerPro
 Depends: mobilesubstrate (>= 0.9.5000)
 Version: 1.0.0
 Architecture: iphoneos-arm
-Description: adblock
+Description: AdBlockerPro
 Maintainer: Mr.Eric
 Author: Mr.Eric
 Section: Tweaks
