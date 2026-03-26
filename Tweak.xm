@@ -1,642 +1,137 @@
+// BluedPrivacyEnabler.m
+#import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
-#import <WebKit/WebKit.h>
-#import <SafariServices/SafariServices.h>
 
-#pragma mark - 穿透 Window
-
-@interface PassWindow : UIWindow
-@end
-
-@implementation PassWindow
-
-- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    UIView *view = [super hitTest:point withEvent:event];
-
-    if ([view isKindOfClass:[UIButton class]] ||
-        [view isKindOfClass:[UITextField class]] ||
-        [view isKindOfClass:[UITextView class]] ||
-        [view isKindOfClass:[UISwitch class]] ||
-        [view isKindOfClass:[UISegmentedControl class]]) {
-        return view;
+#pragma mark - 工具函数
+static void swizzleMethod(Class class, SEL original, SEL replacement) {
+    Method origMethod = class_getInstanceMethod(class, original);
+    Method newMethod = class_getInstanceMethod(class, replacement);
+    if (class_addMethod(class, original, method_getImplementation(newMethod), method_getTypeEncoding(newMethod))) {
+        class_replaceMethod(class, replacement, method_getImplementation(origMethod), method_getTypeEncoding(origMethod));
+    } else {
+        method_exchangeImplementations(origMethod, newMethod);
     }
-
-    return nil;
 }
 
-@end
+static void setPropertyIfExists(id obj, NSString *propertyName, id value) {
+    SEL setter = NSSelectorFromString([NSString stringWithFormat:@"set%@:", [propertyName capitalizedString]]);
+    if ([obj respondsToSelector:setter]) {
+        [obj setValue:value forKey:propertyName];
+    }
+}
 
-#pragma mark - 全局
-
-static PassWindow *gWindow;
-static UIView *panel;
-static UIButton *ball;
-static UITextView *logView;
-static UITextField *input;
-static UISwitch *enableSwitch;
-static UISwitch *alertSwitch;
-
-static BOOL isOpen = NO;
-static BOOL kEnable = YES;
-static BOOL blockAlerts = YES;
-static NSMutableArray *logs;
-static NSMutableArray *rules;
-static BOOL isUISetup = NO;
-
-#define kRulesKey @"rules"
-#define kBlockAlertsKey @"blockAlerts"
-#define kEnableKey @"enable"
-
-#pragma mark - 日志
-
-static void addLog(NSString *log) {
-    if (!log) return;
+#pragma mark - 核心功能设置
+static void enableAllPrivacyFeatures(id userInfo) {
+    // 1. 无痕访问
+    setPropertyIfExists(userInfo, @"isTracelessAccess", @YES);
     
-    static dispatch_queue_t logQueue = NULL;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        logQueue = dispatch_queue_create("com.adblocker.log", DISPATCH_QUEUE_SERIAL);
+    // 2. 悄悄查看
+    setPropertyIfExists(userInfo, @"isGlobalViewSecretly", @YES);
+    setPropertyIfExists(userInfo, @"isAgeStealth", @YES);
+    setPropertyIfExists(userInfo, @"isRoleStealth", @YES);
+    setPropertyIfExists(userInfo, @"isStealthDistance", @YES);
+    
+    // 3. 隐藏在线时间
+    setPropertyIfExists(userInfo, @"isHideLastOperate", @YES);
+    
+    // 4. 隐藏距离
+    setPropertyIfExists(userInfo, @"isHideDistance", @YES);
+    
+    // 5. 截屏保护（在单独的管理类中设置）
+    // 稍后单独处理
+}
+
+#pragma mark - 截屏保护单独处理
+static void enableScreenshotProtection(void) {
+    // 尝试获取 BDChatProtectionManager 单例
+    Class managerClass = NSClassFromString(@"BDChatProtectionManager");
+    if (managerClass) {
+        // 假设有 sharedInstance 方法
+        SEL sharedSel = NSSelectorFromString(@"sharedInstance");
+        if ([managerClass respondsToSelector:sharedSel]) {
+            id manager = ((id (*)(id, SEL))objc_msgSend)(managerClass, sharedSel);
+            if (manager && [manager respondsToSelector:NSSelectorFromString(@"setIs_prohibit_chat_screenshot:")]) {
+                [manager setValue:@YES forKey:@"is_prohibit_chat_screenshot"];
+            }
+        }
+    }
+    
+    // 尝试获取 BDChatProtectionModel 实例（可能通过 userDefaults 或单例）
+    Class modelClass = NSClassFromString(@"BDChatProtectionModel");
+    if (modelClass) {
+        id model = [modelClass performSelector:NSSelectorFromString(@"sharedModel")]; // 假设存在
+        if (model) {
+            setPropertyIfExists(model, @"is_prohibit_chat_screenshot", @YES);
+        }
+    }
+}
+
+#pragma mark - Hook 用户信息对象的初始化
+static void setupUserInfoHook(void) {
+    Class BDUserInfo = NSClassFromString(@"BDUserInfo");
+    if (!BDUserInfo) return;
+    
+    // 保存原始方法实现
+    SEL originalInit = @selector(initWithCoder:);
+    __block IMP originalImp = NULL;
+    
+    IMP newImp = imp_implementationWithBlock(^(id self, NSCoder *coder) {
+        id result = ((id (*)(id, SEL, NSCoder*))originalImp)(self, originalInit, coder);
+        if (result) {
+            enableAllPrivacyFeatures(result);
+        }
+        return result;
     });
     
-    dispatch_async(logQueue, ^{
-        if (!logs) {
-            logs = [NSMutableArray array];
-        }
-        
-        NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
-        formatter.dateFormat = @"HH:mm:ss.SSS";
-        NSString *timestamp = [formatter stringFromDate:[NSDate date]];
-        [logs addObject:[NSString stringWithFormat:@"[%@] %@\n", timestamp, log]];
-        
-        if (logs.count > 500) {
-            [logs removeObjectsInRange:NSMakeRange(0, 200)];
-        }
-        
-        if (isUISetup) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                @try {
-                    if (logView && logView.superview) {
-                        logView.text = [logs componentsJoinedByString:@""];
-                        [logView scrollRangeToVisible:NSMakeRange(logView.text.length, 0)];
-                    }
-                } @catch (NSException *exception) {
-                    // 忽略
-                }
-            });
-        }
-    });
-}
-
-#pragma mark - 规则
-
-static void loadRules() {
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    NSArray *arr = [defaults objectForKey:kRulesKey];
-    if (arr && arr.count > 0) {
-        rules = [arr mutableCopy];
-    } else {
-        rules = [@[
-            @"simhaoka.com",
-            @"t\\.me/.*",
-            @"doubleclick.net",
-            @"googleadservices\\.com",
-            @"googlesyndication\\.com",
-            @"adservice\\.google\\.com",
-            @"pagead2\\.googlesyndication\\.com",
-            @"ad\\.doubleclick\\.net"
-        ] mutableCopy];
-        [defaults setObject:rules forKey:kRulesKey];
+    Method method = class_getInstanceMethod(BDUserInfo, originalInit);
+    if (method) {
+        originalImp = method_getImplementation(method);
+        class_replaceMethod(BDUserInfo, @selector(privacy_initWithCoder:), newImp, method_getTypeEncoding(method));
+        swizzleMethod(BDUserInfo, originalInit, @selector(privacy_initWithCoder:));
     }
     
-    if ([defaults objectForKey:kEnableKey]) {
-        kEnable = [defaults boolForKey:kEnableKey];
-    } else {
-        kEnable = YES;
-        [defaults setBool:YES forKey:kEnableKey];
-    }
-    
-    blockAlerts = [defaults boolForKey:kBlockAlertsKey];
-    if (![defaults objectForKey:kBlockAlertsKey]) {
-        blockAlerts = YES;
-        [defaults setBool:YES forKey:kBlockAlertsKey];
-    }
-    
-    addLog(@"规则加载完成");
-}
-
-static void saveRules() {
-    [[NSUserDefaults standardUserDefaults] setObject:rules forKey:kRulesKey];
-}
-
-static void saveSettings() {
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    [defaults setBool:kEnable forKey:kEnableKey];
-    [defaults setBool:blockAlerts forKey:kBlockAlertsKey];
-}
-
-#pragma mark - 匹配
-
-static BOOL match(NSString *url, NSString *rule) {
-    if (!url || !rule) return NO;
-    
-    @try {
-        if (![rule containsString:@"\\"] && ![rule containsString:@"."] && 
-            ![rule containsString:@"*"] && ![rule containsString:@"^"] && 
-            ![rule containsString:@"$"] && ![rule containsString:@"+"] && 
-            ![rule containsString:@"?"] && ![rule containsString:@"["] && 
-            ![rule containsString:@"]"] && ![rule containsString:@"("] && 
-            ![rule containsString:@")"] && ![rule containsString:@"|"]) {
-            return [url localizedCaseInsensitiveContainsString:rule];
-        }
-        
-        NSError *error = nil;
-        NSRegularExpression *re = [NSRegularExpression regularExpressionWithPattern:rule 
-                                                                             options:NSRegularExpressionCaseInsensitive 
-                                                                               error:&error];
-        if (error) return NO;
-        NSRange range = NSMakeRange(0, url.length);
-        return [re numberOfMatchesInString:url options:0 range:range] > 0;
-    } @catch (NSException *exception) {
-        return NO;
+    // 也可以 hook 其他初始化方法，如 initWithDictionary:
+    SEL dictInit = @selector(initWithDictionary:);
+    if (class_getInstanceMethod(BDUserInfo, dictInit)) {
+        // 类似实现，省略
     }
 }
 
-static BOOL shouldBlock(NSURL *url) {
-    if (!kEnable || !url) return NO;
-    
-    NSString *absoluteURL = url.absoluteString;
-    NSString *host = url.host;
-    
-    for (NSString *rule in rules) {
-        if (!rule || rule.length == 0) continue;
-        
-        if (match(absoluteURL, rule)) {
-            addLog([NSString stringWithFormat:@"✅ 拦截: %@", absoluteURL]);
-            return YES;
+#pragma mark - 监听登录成功，再次确保设置
+static void observeLoginSuccess(void) {
+    // 假设登录成功通知名为 "BDLoginSuccessNotification"
+    [[NSNotificationCenter defaultCenter] addObserverForName:@"BDLoginSuccessNotification"
+                                                      object:nil
+                                                       queue:[NSOperationQueue mainQueue]
+                                                  usingBlock:^(NSNotification *note) {
+        // 获取当前用户信息
+        id userInfo = nil;
+        // 尝试从 AppDelegate 获取
+        id appDelegate = [UIApplication sharedApplication].delegate;
+        if (appDelegate) {
+            id mineModel = [appDelegate valueForKey:@"mineModel"];
+            if (mineModel && [mineModel respondsToSelector:NSSelectorFromString(@"userInfo")]) {
+                userInfo = [mineModel valueForKey:@"userInfo"];
+            } else {
+                // 尝试直接获取 userInfo
+                userInfo = [appDelegate valueForKey:@"userInfo"];
+            }
         }
-        
-        if (host && match(host, rule)) {
-            addLog([NSString stringWithFormat:@"✅ 拦截: %@", host]);
-            return YES;
+        if (userInfo) {
+            enableAllPrivacyFeatures(userInfo);
         }
-    }
-    
-    return NO;
-}
-
-#pragma mark - UI - 悬浮球
-
-@interface FloatBall : UIButton
-@end
-
-@implementation FloatBall {
-    CGPoint startPoint;
-    BOOL isDragging;
-}
-
-- (instancetype)init {
-    CGFloat size = 55;
-    CGFloat x = UIScreen.mainScreen.bounds.size.width - size - 15;
-    CGFloat y = 200;
-    self = [super initWithFrame:CGRectMake(x, y, size, size)];
-    if (self) {
-        self.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:0.9 alpha:0.9];
-        self.layer.cornerRadius = size / 2;
-        self.layer.shadowColor = UIColor.blackColor.CGColor;
-        self.layer.shadowOffset = CGSizeMake(0, 2);
-        self.layer.shadowRadius = 4;
-        self.layer.shadowOpacity = 0.3;
-        
-        [self setTitle:@"⚡" forState:UIControlStateNormal];
-        self.titleLabel.font = [UIFont systemFontOfSize:28];
-        
-        [self addTarget:self action:@selector(handleTap) forControlEvents:UIControlEventTouchUpInside];
-    }
-    return self;
-}
-
-- (void)handleTap {
-    if (!isDragging && panel) {
-        isOpen = !isOpen;
-        [UIView animateWithDuration:0.3 animations:^{
-            panel.alpha = isOpen ? 1 : 0;
-            panel.transform = isOpen ? CGAffineTransformIdentity : CGAffineTransformMakeScale(0.9, 0.9);
-        }];
-    }
-}
-
-- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    isDragging = NO;
-    UITouch *touch = [touches anyObject];
-    startPoint = [touch locationInView:self.superview];
-    [super touchesBegan:touches withEvent:event];
-}
-
-- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    isDragging = YES;
-    UITouch *touch = [touches anyObject];
-    CGPoint currentPoint = [touch locationInView:self.superview];
-    
-    CGRect frame = self.frame;
-    frame.origin.x += currentPoint.x - startPoint.x;
-    frame.origin.y += currentPoint.y - startPoint.y;
-    
-    CGFloat screenWidth = UIScreen.mainScreen.bounds.size.width;
-    CGFloat screenHeight = UIScreen.mainScreen.bounds.size.height;
-    
-    frame.origin.x = MAX(0, MIN(frame.origin.x, screenWidth - frame.size.width));
-    frame.origin.y = MAX(0, MIN(frame.origin.y, screenHeight - frame.size.height));
-    
-    self.frame = frame;
-    startPoint = currentPoint;
-}
-
-- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    [super touchesEnded:touches withEvent:event];
-    if (!isDragging) return;
-    
-    [UIView animateWithDuration:0.25 animations:^{
-        CGRect frame = self.frame;
-        CGFloat screenWidth = UIScreen.mainScreen.bounds.size.width;
-        CGFloat screenHeight = UIScreen.mainScreen.bounds.size.height;
-        
-        if (frame.origin.x + frame.size.width / 2 < screenWidth / 2) {
-            frame.origin.x = 8;
-        } else {
-            frame.origin.x = screenWidth - frame.size.width - 8;
-        }
-        
-        frame.origin.y = MAX(40, MIN(frame.origin.y, screenHeight - frame.size.height - 40));
-        self.frame = frame;
+        enableScreenshotProtection();
     }];
 }
 
-@end
-
-#pragma mark - Actions 类
-
-@interface TweakActions : NSObject
-+ (void)closePanel;
-+ (void)addRule;
-+ (void)clearRules;
-+ (void)toggleEnable:(UISwitch *)sender;
-+ (void)toggleBlockAlerts:(UISwitch *)sender;
-+ (void)segmentChanged:(UISegmentedControl *)sender;
-@end
-
-@implementation TweakActions
-
-+ (void)closePanel {
-    if (isOpen && panel) {
-        isOpen = NO;
-        [UIView animateWithDuration:0.3 animations:^{
-            panel.alpha = 0;
-            panel.transform = CGAffineTransformMakeScale(0.9, 0.9);
-        }];
-    }
-}
-
-+ (void)addRule {
-    if (input && input.text.length > 0) {
-        NSString *newRule = [input.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        if (newRule.length > 0) {
-            [rules addObject:newRule];
-            saveRules();
-            addLog([NSString stringWithFormat:@"➕ 添加规则: %@", newRule]);
-            input.text = @"";
-            
-            UITextView *ruleListView = (UITextView *)[panel viewWithTag:1001];
-            if (ruleListView) {
-                NSMutableString *ruleText = [NSMutableString string];
-                for (int i = 0; i < rules.count; i++) {
-                    [ruleText appendFormat:@"%d. %@\n", i + 1, rules[i]];
-                }
-                ruleListView.text = ruleText.length ? ruleText : @"暂无规则";
-            }
-        }
-    }
-}
-
-+ (void)clearRules {
-    [rules removeAllObjects];
-    saveRules();
-    addLog(@"🗑 已清空所有规则");
-    
-    UITextView *ruleListView = (UITextView *)[panel viewWithTag:1001];
-    if (ruleListView) {
-        ruleListView.text = @"暂无规则";
-    }
-}
-
-+ (void)toggleEnable:(UISwitch *)sender {
-    kEnable = sender.isOn;
-    saveSettings();
-    addLog([NSString stringWithFormat:@"🔘 全局屏蔽: %@", kEnable ? @"开启" : @"关闭"]);
-}
-
-+ (void)toggleBlockAlerts:(UISwitch *)sender {
-    blockAlerts = sender.isOn;
-    saveSettings();
-    addLog([NSString stringWithFormat:@"🔘 弹窗屏蔽: %@", blockAlerts ? @"开启" : @"关闭"]);
-}
-
-+ (void)segmentChanged:(UISegmentedControl *)sender {
-    UITextView *ruleListView = (UITextView *)[panel viewWithTag:1001];
-    
-    if (sender.selectedSegmentIndex == 0) {
-        ruleListView.hidden = YES;
-        logView.hidden = NO;
-    } else {
-        ruleListView.hidden = NO;
-        logView.hidden = YES;
-        
-        NSMutableString *ruleText = [NSMutableString string];
-        for (int i = 0; i < rules.count; i++) {
-            [ruleText appendFormat:@"%d. %@\n", i + 1, rules[i]];
-        }
-        ruleListView.text = ruleText.length ? ruleText : @"暂无规则";
-    }
-}
-
-@end
-
-#pragma mark - 初始化 UI
-
-static void setupUI() {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        @try {
-            gWindow = [[PassWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
-            gWindow.windowLevel = UIWindowLevelAlert + 100;
-            gWindow.backgroundColor = [UIColor clearColor];
-            gWindow.userInteractionEnabled = YES;
-            gWindow.hidden = NO;
-            
-            UIViewController *vc = [UIViewController new];
-            vc.view.backgroundColor = [UIColor clearColor];
-            gWindow.rootViewController = vc;
-            
-            ball = [FloatBall new];
-            [vc.view addSubview:ball];
-            
-            CGFloat panelWidth = 360;
-            CGFloat panelHeight = 580;
-            CGFloat panelX = (UIScreen.mainScreen.bounds.size.width - panelWidth) / 2;
-            CGFloat panelY = (UIScreen.mainScreen.bounds.size.height - panelHeight) / 2;
-            
-            panel = [[UIView alloc] initWithFrame:CGRectMake(panelX, panelY, panelWidth, panelHeight)];
-            panel.backgroundColor = [[UIColor colorWithWhite:0.1 alpha:0.95] colorWithAlphaComponent:0.95];
-            panel.layer.cornerRadius = 15;
-            panel.alpha = 0;
-            panel.transform = CGAffineTransformMakeScale(0.9, 0.9);
-            [vc.view addSubview:panel];
-            
-            // 标题
-            UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 15, 200, 30)];
-            titleLabel.text = @"网络屏蔽插件 v1.0";
-            titleLabel.textColor = UIColor.whiteColor;
-            titleLabel.font = [UIFont boldSystemFontOfSize:18];
-            [panel addSubview:titleLabel];
-            
-            // 关闭按钮
-            UIButton *closeBtn = [[UIButton alloc] initWithFrame:CGRectMake(panelWidth - 45, 15, 30, 30)];
-            [closeBtn setTitle:@"✕" forState:UIControlStateNormal];
-            closeBtn.backgroundColor = [UIColor colorWithWhite:0.3 alpha:1];
-            closeBtn.layer.cornerRadius = 15;
-            [closeBtn addTarget:[TweakActions class] action:@selector(closePanel) forControlEvents:UIControlEventTouchUpInside];
-            [panel addSubview:closeBtn];
-            
-            // 全局屏蔽开关
-            UIView *switchContainer = [[UIView alloc] initWithFrame:CGRectMake(15, 60, panelWidth - 30, 50)];
-            switchContainer.backgroundColor = [UIColor colorWithWhite:0.2 alpha:0.5];
-            switchContainer.layer.cornerRadius = 8;
-            [panel addSubview:switchContainer];
-            
-            UILabel *enableLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 15, 100, 20)];
-            enableLabel.text = @"🔒 全局屏蔽";
-            enableLabel.textColor = UIColor.whiteColor;
-            enableLabel.font = [UIFont systemFontOfSize:14];
-            [switchContainer addSubview:enableLabel];
-            
-            enableSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(switchContainer.frame.size.width - 65, 10, 50, 30)];
-            enableSwitch.on = kEnable;
-            [enableSwitch addTarget:[TweakActions class] action:@selector(toggleEnable:) forControlEvents:UIControlEventValueChanged];
-            [switchContainer addSubview:enableSwitch];
-            
-            // 弹窗屏蔽开关
-            UIView *alertContainer = [[UIView alloc] initWithFrame:CGRectMake(15, 120, panelWidth - 30, 50)];
-            alertContainer.backgroundColor = [UIColor colorWithWhite:0.2 alpha:0.5];
-            alertContainer.layer.cornerRadius = 8;
-            [panel addSubview:alertContainer];
-            
-            UILabel *alertLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 15, 120, 20)];
-            alertLabel.text = @"🚫 屏蔽插件弹窗";
-            alertLabel.textColor = UIColor.whiteColor;
-            alertLabel.font = [UIFont systemFontOfSize:14];
-            [alertContainer addSubview:alertLabel];
-            
-            alertSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(alertContainer.frame.size.width - 65, 10, 50, 30)];
-            alertSwitch.on = blockAlerts;
-            [alertSwitch addTarget:[TweakActions class] action:@selector(toggleBlockAlerts:) forControlEvents:UIControlEventValueChanged];
-            [alertContainer addSubview:alertSwitch];
-            
-            // 规则输入
-            UILabel *ruleLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 185, 100, 25)];
-            ruleLabel.text = @"📝 添加规则";
-            ruleLabel.textColor = UIColor.whiteColor;
-            ruleLabel.font = [UIFont boldSystemFontOfSize:14];
-            [panel addSubview:ruleLabel];
-            
-            input = [[UITextField alloc] initWithFrame:CGRectMake(15, 215, panelWidth - 100, 40)];
-            input.backgroundColor = UIColor.whiteColor;
-            input.layer.cornerRadius = 8;
-            input.placeholder = @"域名或正则表达式 (如: simhaoka.com)";
-            input.leftView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 10, 40)];
-            input.leftViewMode = UITextFieldViewModeAlways;
-            input.font = [UIFont systemFontOfSize:14];
-            input.autocapitalizationType = UITextAutocapitalizationTypeNone;
-            input.autocorrectionType = UITextAutocorrectionTypeNo;
-            [panel addSubview:input];
-            
-            UIButton *addBtn = [[UIButton alloc] initWithFrame:CGRectMake(panelWidth - 75, 215, 60, 40)];
-            [addBtn setTitle:@"添加" forState:UIControlStateNormal];
-            addBtn.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:0.9 alpha:1];
-            addBtn.layer.cornerRadius = 8;
-            [addBtn addTarget:[TweakActions class] action:@selector(addRule) forControlEvents:UIControlEventTouchUpInside];
-            [panel addSubview:addBtn];
-            
-            // 规则列表
-            UILabel *listLabel = [[UILabel alloc] initWithFrame:CGRectMake(15, 265, 100, 25)];
-            listLabel.text = @"📋 规则列表";
-            listLabel.textColor = UIColor.whiteColor;
-            listLabel.font = [UIFont boldSystemFontOfSize:14];
-            [panel addSubview:listLabel];
-            
-            UIButton *clearBtn = [[UIButton alloc] initWithFrame:CGRectMake(panelWidth - 70, 265, 55, 25)];
-            [clearBtn setTitle:@"清空" forState:UIControlStateNormal];
-            clearBtn.backgroundColor = [UIColor colorWithRed:0.8 green:0.2 blue:0.2 alpha:1];
-            clearBtn.layer.cornerRadius = 5;
-            clearBtn.titleLabel.font = [UIFont systemFontOfSize:12];
-            [clearBtn addTarget:[TweakActions class] action:@selector(clearRules) forControlEvents:UIControlEventTouchUpInside];
-            [panel addSubview:clearBtn];
-            
-            // 分段选择器
-            UISegmentedControl *segment = [[UISegmentedControl alloc] initWithItems:@[@"📱 日志", @"📄 规则列表"]];
-            segment.frame = CGRectMake(15, 300, panelWidth - 30, 30);
-            segment.selectedSegmentIndex = 0;
-            [segment addTarget:[TweakActions class] action:@selector(segmentChanged:) forControlEvents:UIControlEventValueChanged];
-            [panel addSubview:segment];
-            
-            // 日志视图
-            logView = [[UITextView alloc] initWithFrame:CGRectMake(15, 340, panelWidth - 30, 225)];
-            logView.backgroundColor = [UIColor colorWithWhite:0.05 alpha:1];
-            logView.textColor = [UIColor colorWithRed:0.3 green:0.9 blue:0.3 alpha:1];
-            logView.font = [UIFont fontWithName:@"Menlo" size:10];
-            logView.editable = NO;
-            logView.layer.cornerRadius = 8;
-            [panel addSubview:logView];
-            
-            // 规则列表视图
-            UITextView *ruleListView = [[UITextView alloc] initWithFrame:CGRectMake(15, 340, panelWidth - 30, 225)];
-            ruleListView.backgroundColor = [UIColor colorWithWhite:0.05 alpha:1];
-            ruleListView.textColor = UIColor.whiteColor;
-            ruleListView.font = [UIFont fontWithName:@"Menlo" size:11];
-            ruleListView.editable = NO;
-            ruleListView.layer.cornerRadius = 8;
-            ruleListView.hidden = YES;
-            ruleListView.tag = 1001;
-            [panel addSubview:ruleListView];
-            
-            NSMutableString *ruleText = [NSMutableString string];
-            for (int i = 0; i < rules.count; i++) {
-                [ruleText appendFormat:@"%d. %@\n", i + 1, rules[i]];
-            }
-            ruleListView.text = ruleText.length ? ruleText : @"暂无规则";
-            
-            isUISetup = YES;
-            
-            addLog(@"UI 已加载");
-            addLog([NSString stringWithFormat:@"全局屏蔽: %@", kEnable ? @"开启" : @"关闭"]);
-            addLog([NSString stringWithFormat:@"弹窗屏蔽: %@", blockAlerts ? @"开启" : @"关闭"]);
-            addLog([NSString stringWithFormat:@"当前规则数: %lu", (unsigned long)rules.count]);
-            
-        } @catch (NSException *exception) {
-            NSLog(@"AdBlocker: Setup UI failed - %@", exception);
-        }
-    });
-}
-
-#pragma mark - Hook (移除 UIWebView)
-
-%hook NSURLSession
-
-- (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))completionHandler {
-    if (kEnable && request.URL && shouldBlock(request.URL)) {
-        addLog([NSString stringWithFormat:@"❌ 拦截 NSURLSession: %@", request.URL]);
-        NSError *error = [NSError errorWithDomain:@"NetworkBlocker" 
-                                             code:999 
-                                         userInfo:@{NSLocalizedDescriptionKey: @"已被网络屏蔽插件拦截"}];
-        if (completionHandler) {
-            completionHandler(nil, nil, error);
-        }
-        return nil;
-    }
-    return %orig;
-}
-
-%end
-
-%hook NSURLConnection
-
-+ (NSURLConnection *)connectionWithRequest:(NSURLRequest *)request delegate:(id)delegate {
-    if (kEnable && request.URL && shouldBlock(request.URL)) {
-        addLog([NSString stringWithFormat:@"❌ 拦截 NSURLConnection: %@", request.URL]);
-        return nil;
-    }
-    return %orig;
-}
-
-%end
-
-%hook WKWebView
-
-- (WKNavigation *)loadRequest:(NSURLRequest *)request {
-    if (kEnable && request.URL && shouldBlock(request.URL)) {
-        addLog([NSString stringWithFormat:@"❌ 拦截 WKWebView: %@", request.URL]);
-        return nil;
-    }
-    return %orig;
-}
-
-%end
-
-%hook WKNavigationDelegate
-
-- (void)webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
-    NSURL *url = navigationAction.request.URL;
-    if (kEnable && url && shouldBlock(url)) {
-        addLog([NSString stringWithFormat:@"❌ 拦截 WKNavigation: %@", url]);
-        if (decisionHandler) {
-            decisionHandler(WKNavigationActionPolicyCancel);
-        }
-        return;
-    }
-    %orig;
-}
-
-%end
-
-%hook SFSafariViewController
-
-- (instancetype)initWithURL:(NSURL *)url entersReaderIfAvailable:(BOOL)entersReaderIfAvailable {
-    if (kEnable && url && shouldBlock(url)) {
-        addLog([NSString stringWithFormat:@"❌ 拦截 SFSafariViewController: %@", url]);
-        return nil;
-    }
-    return %orig;
-}
-
-%end
-
-%hook UIAlertController
-
-- (void)viewDidLoad {
-    %orig;
-    
-    if (blockAlerts && kEnable) {
-        @try {
-            NSString *title = self.title ?: @"";
-            NSString *message = self.message ?: @"";
-            NSString *fullText = [NSString stringWithFormat:@"%@ %@", title, message];
-            
-            NSArray *keywords = @[@"评分", @"评价", @"好评", @"去设置", @"打开通知", @"会员", @"VIP", @"订阅", @"优惠", @"促销", @"推荐", @"广告", @"点赞", @"分享", @"邀请", @"红包"];
-            
-            for (NSString *keyword in keywords) {
-                if ([fullText containsString:keyword]) {
-                    addLog([NSString stringWithFormat:@"🚫 屏蔽弹窗: %@", fullText]);
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        [self dismissViewControllerAnimated:NO completion:nil];
-                    });
-                    return;
-                }
-            }
-        } @catch (NSException *exception) {
-            // 忽略
-        }
-    }
-}
-
-%end
-
 #pragma mark - 入口
-
-%ctor {
-    loadRules();
-    addLog(@"🚀 AdBlocker 插件已加载");
-    addLog([NSString stringWithFormat:@"🔘 初始状态: 全局屏蔽=%@, 弹窗屏蔽=%@", 
-            kEnable ? @"开启" : @"关闭", 
-            blockAlerts ? @"开启" : @"关闭"]);
-    
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        setupUI();
+__attribute__((constructor))
+static void initialize(void) {
+    // 延迟执行，确保应用已经启动
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        setupUserInfoHook();
+        enableScreenshotProtection();
+        observeLoginSuccess();
     });
 }
