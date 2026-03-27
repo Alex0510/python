@@ -1,87 +1,67 @@
 #import <UIKit/UIKit.h>
-#import <objc/runtime.h>
 
-#pragma mark - 全局开关
+#pragma mark - 开关
 
-static BOOL kEnableStep = YES;
-static BOOL kEnableScore = YES;
-static BOOL kEnableVIP = YES;
+static BOOL kVIP = YES;
+static BOOL kCoin = YES;
+static BOOL kStep = YES;
 
-#pragma mark - Window 获取
+#pragma mark - Window
 
-UIWindow *getKeyWindow() {
-    UIWindow *window = nil;
-
-    if (@available(iOS 13.0, *)) {
-        for (UIWindowScene *scene in [UIApplication sharedApplication].connectedScenes) {
-            if (scene.activationState == UISceneActivationStateForegroundActive) {
-                for (UIWindow *w in scene.windows) {
-                    if (w.isKeyWindow) {
-                        window = w;
-                        break;
-                    }
-                }
-            }
-        }
-    } else {
-        window = [UIApplication sharedApplication].keyWindow;
+static UIWindow *KeyWindow() {
+    for (UIWindow *w in [UIApplication sharedApplication].windows) {
+        if (w.isKeyWindow) return w;
     }
-
-    return window;
+    return [UIApplication sharedApplication].keyWindow;
 }
 
-#pragma mark - Logger
+#pragma mark - 日志
 
-@interface HackLogger : NSObject
-@property (nonatomic, strong) UITextView *textView;
-+ (instancetype)shared;
-- (void)log:(NSString *)msg;
+@interface HLog : NSObject
+@property(nonatomic,strong) UITextView *tv;
++ (instancetype)g;
+- (void)log:(NSString *)s;
 @end
 
-@implementation HackLogger
+@implementation HLog
 
-+ (instancetype)shared {
-    static HackLogger *l;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        l = [HackLogger new];
++ (instancetype)g {
+    static HLog *x;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        x = [HLog new];
     });
-    return l;
+    return x;
 }
 
-- (void)log:(NSString *)msg {
+- (void)log:(NSString *)s {
     dispatch_async(dispatch_get_main_queue(), ^{
-        NSString *old = self.textView.text ?: @"";
-        NSString *newStr = [old stringByAppendingFormat:@"\n%@", msg];
-        self.textView.text = newStr;
-
-        NSRange range = NSMakeRange(newStr.length - 1, 1);
-        [self.textView scrollRangeToVisible:range];
+        if (!self.tv) return;
+        NSString *old = self.tv.text ?: @"";
+        self.tv.text = [old stringByAppendingFormat:@"\n%@", s];
     });
 }
 
 @end
 
-#pragma mark - UI
+#pragma mark - 悬浮UI
 
-@interface HackView : UIView
-@property (nonatomic, strong) UIView *panel;
+@interface HView : UIView
+@property(nonatomic,strong) UIView *panel;
 @end
 
-@implementation HackView
+@implementation HView
 
 - (instancetype)init {
-    self = [super initWithFrame:CGRectMake(100, 200, 60, 60)];
-
+    self = [super initWithFrame:CGRectMake(100,200,60,60)];
     self.backgroundColor = [UIColor redColor];
     self.layer.cornerRadius = 30;
 
-    UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
-    btn.frame = self.bounds;
-    [btn setTitle:@"H" forState:UIControlStateNormal];
-
-    [btn addTarget:self action:@selector(togglePanel) forControlEvents:UIControlEventTouchUpInside];
-    [self addSubview:btn];
+    UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem];
+    b.frame = self.bounds;
+    [b setTitle:@"H" forState:UIControlStateNormal];
+    [b addTarget:self action:@selector(click) forControlEvents:UIControlEventTouchUpInside];
+    [self addSubview:b];
 
     UIPanGestureRecognizer *pan =
     [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(pan:)];
@@ -96,7 +76,7 @@ UIWindow *getKeyWindow() {
     [g setTranslation:CGPointZero inView:self];
 }
 
-- (void)togglePanel {
+- (void)click {
 
     if (self.panel) {
         [self.panel removeFromSuperview];
@@ -104,101 +84,91 @@ UIWindow *getKeyWindow() {
         return;
     }
 
-    UIWindow *window = getKeyWindow();
-    if (!window) return;
+    UIWindow *w = KeyWindow();
+    if (!w) return;
 
-    self.panel = [[UIView alloc] initWithFrame:CGRectMake(20, 100, 300, 400)];
+    self.panel = [[UIView alloc] initWithFrame:CGRectMake(20,100,260,300)];
     self.panel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.8];
-    self.panel.layer.cornerRadius = 10;
 
-    NSArray *titles = @[@"无限步数", @"分数增强", @"VIP解锁"];
+    NSArray *arr = @[@"VIP", @"金币", @"步数"];
 
-    for (int i = 0; i < titles.count; i++) {
+    for (int i = 0; i < arr.count; i++) {
 
-        UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
-        btn.frame = CGRectMake(20, 20 + i * 50, 200, 40);
-        [btn setTitle:titles[i] forState:UIControlStateNormal];
-        btn.tag = i;
-
-        [btn addTarget:self action:@selector(toggle:) forControlEvents:UIControlEventTouchUpInside];
-        [self.panel addSubview:btn];
+        UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem];
+        b.frame = CGRectMake(20, 20 + i*50, 200, 40);
+        [b setTitle:arr[i] forState:UIControlStateNormal];
+        b.tag = i;
+        [b addTarget:self action:@selector(toggle:) forControlEvents:UIControlEventTouchUpInside];
+        [self.panel addSubview:b];
     }
 
-    UITextView *logView = [[UITextView alloc] initWithFrame:CGRectMake(10, 180, 280, 200)];
-    logView.backgroundColor = [UIColor blackColor];
-    logView.textColor = [UIColor greenColor];
-    logView.font = [UIFont systemFontOfSize:10];
+    UITextView *tv = [[UITextView alloc] initWithFrame:CGRectMake(10,180,240,100)];
+    tv.backgroundColor = [UIColor blackColor];
+    tv.textColor = [UIColor greenColor];
+    tv.font = [UIFont systemFontOfSize:10];
+    [self.panel addSubview:tv];
 
-    [self.panel addSubview:logView];
+    [HLog g].tv = tv;
 
-    [HackLogger shared].textView = logView;
-
-    [window addSubview:self.panel];
+    [w addSubview:self.panel];
 }
 
-- (void)toggle:(UIButton *)btn {
+- (void)toggle:(UIButton *)b {
 
-    if (btn.tag == 0) kEnableStep = !kEnableStep;
-    if (btn.tag == 1) kEnableScore = !kEnableScore;
-    if (btn.tag == 2) kEnableVIP = !kEnableVIP;
+    if (b.tag == 0) kVIP = !kVIP;
+    if (b.tag == 1) kCoin = !kCoin;
+    if (b.tag == 2) kStep = !kStep;
 
-    [[HackLogger shared] log:[NSString stringWithFormat:@"切换开关: %d", (int)btn.tag]];
+    [[HLog g] log:[NSString stringWithFormat:@"切换:%ld",(long)b.tag]];
 }
 
 @end
 
-#pragma mark - Hook NSDictionary
+#pragma mark - 万能字段Hook
 
 %hook NSDictionary
 
 - (id)objectForKey:(id)key {
 
-    id value = %orig;
+    id val = %orig;
 
-    if (![key isKindOfClass:[NSString class]]) return value;
+    if (![key isKindOfClass:[NSString class]]) return val;
 
     NSString *k = [(NSString *)key lowercaseString];
 
-    if ([k containsString:@"vip"] && kEnableVIP) {
-        [[HackLogger shared] log:@"VIP 命中"];
+    if (kVIP && [k containsString:@"vip"]) {
+        [[HLog g] log:@"VIP"];
         return @(1);
     }
 
-    if (([k containsString:@"coin"] || [k containsString:@"gold"]) && kEnableScore) {
-        [[HackLogger shared] log:@"金币命中"];
+    if (kCoin && ([k containsString:@"coin"] || [k containsString:@"gold"])) {
+        [[HLog g] log:@"金币"];
         return @(999999);
     }
 
-    if ([k containsString:@"step"] && kEnableStep) {
-        [[HackLogger shared] log:@"步数命中"];
+    if (kStep && [k containsString:@"step"]) {
+        [[HLog g] log:@"步数"];
         return @(999);
     }
 
-    return value;
+    return val;
 }
 
 %end
 
-#pragma mark - 网络日志
+#pragma mark - 网络日志（稳定写法）
 
 %hook NSURLSession
 
 - (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request
                             completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))completionHandler {
 
-    [[HackLogger shared] log:[NSString stringWithFormat:@"URL: %@", request.URL.absoluteString]];
+    [[HLog g] log:request.URL.absoluteString];
 
-    return %orig(request, ^(NSData *data, NSURLResponse *res, NSError *err) {
+    NSURLSessionDataTask *task =
+    %orig(request, completionHandler);
 
-        if (data) {
-            NSString *str = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-            if (str.length < 200) {
-                [[HackLogger shared] log:str];
-            }
-        }
-
-        completionHandler(data, res, err);
-    });
+    return task;
 }
 
 %end
@@ -210,16 +180,16 @@ UIWindow *getKeyWindow() {
 - (void)didFinishLaunching {
     %orig;
 
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1 * NSEC_PER_SEC),
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
 
-        UIWindow *window = getKeyWindow();
-        if (!window) return;
+        UIWindow *w = KeyWindow();
+        if (!w) return;
 
-        HackView *v = [[HackView alloc] init];
-        [window addSubview:v];
+        HView *v = [[HView alloc] init];
+        [w addSubview:v];
 
-        [[HackLogger shared] log:@"插件加载成功"];
+        [[HLog g] log:@"加载成功"];
     });
 }
 
