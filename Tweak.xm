@@ -1,95 +1,80 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 
+#pragma mark - 全局开关
+
 static BOOL kEnableStep = YES;
 static BOOL kEnableScore = YES;
-static BOOL kEnableItem = YES;
 static BOOL kEnableVIP = YES;
 
-#pragma mark - 自动识别关键字段
+#pragma mark - Window 获取（适配 iOS13+）
 
-BOOL isTargetKey(NSString *key) {
-    NSArray *keys = @[
-        @"score", @"coin", @"gold",
-        @"step", @"energy",
-        @"vip", @"member", @"pro"
-    ];
+UIWindow *getKeyWindow() {
+    UIWindow *window = nil;
 
-    for (NSString *k in keys) {
-        if ([[key lowercaseString] containsString:k]) {
-            return YES;
+    if (@available(iOS 13.0, *)) {
+        for (UIWindowScene *scene in [UIApplication sharedApplication].connectedScenes) {
+            if (scene.activationState == UISceneActivationStateForegroundActive) {
+                for (UIWindow *w in scene.windows) {
+                    if (w.isKeyWindow) {
+                        window = w;
+                        break;
+                    }
+                }
+            }
         }
-    }
-    return NO;
-}
-
-#pragma mark - Hook NSDictionary（万能入口）
-
-%hook NSDictionary
-
-- (id)objectForKey:(id)key {
-
-    id value = %orig;
-
-    if (![key isKindOfClass:[NSString class]]) return value;
-
-    NSString *k = [(NSString *)key lowercaseString];
-
-    if (isTargetKey(k)) {
-
-        if ([k containsString:@"vip"] && kEnableVIP) {
-            return @(1);
-        }
-
-        if (([k containsString:@"coin"] || [k containsString:@"gold"]) && kEnableScore) {
-            return @(999999);
-        }
-
-        if ([k containsString:@"step"] && kEnableStep) {
-            return @(999);
-        }
+    } else {
+        window = [UIApplication sharedApplication].keyWindow;
     }
 
-    return value;
+    return window;
 }
 
-%end
+#pragma mark - 日志系统
 
-#pragma mark - 越狱检测绕过
+@interface HackLogger : NSObject
+@property (nonatomic, strong) UITextView *textView;
++ (instancetype)shared;
+- (void)log:(NSString *)msg;
+@end
 
-%hook NSFileManager
+@implementation HackLogger
 
-- (BOOL)fileExistsAtPath:(NSString *)path {
-
-    if ([path containsString:@"Cydia"] ||
-        [path containsString:@"Substrate"] ||
-        [path containsString:@"apt"]) {
-        return NO;
-    }
-
-    return %orig;
++ (instancetype)shared {
+    static HackLogger *l;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        l = [HackLogger new];
+    });
+    return l;
 }
 
-%end
+- (void)log:(NSString *)msg {
 
-#pragma mark - getenv 防检测
+    dispatch_async(dispatch_get_main_queue(), ^{
 
-%hook NSProcessInfo
+        NSString *old = self.textView.text ?: @"";
+        NSString *new = [old stringByAppendingFormat:@"\n%@", msg];
 
-- (NSDictionary *)environment {
-    return @{};
+        self.textView.text = new;
+
+        NSRange range = NSMakeRange(new.length - 1, 1);
+        [self.textView scrollRangeToVisible:range];
+    });
 }
 
-%end
+@end
 
-#pragma mark - UI 悬浮窗
+#pragma mark - 悬浮窗 UI
 
 @interface HackView : UIView
+@property (nonatomic, strong) UIView *panel;
 @end
 
 @implementation HackView
 
 - (instancetype)init {
+
     self = [super initWithFrame:CGRectMake(100, 200, 60, 60)];
 
     self.backgroundColor = [UIColor redColor];
@@ -97,9 +82,9 @@ BOOL isTargetKey(NSString *key) {
 
     UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
     btn.frame = self.bounds;
-    [btn setTitle:@"Hack" forState:UIControlStateNormal];
+    [btn setTitle:@"H" forState:UIControlStateNormal];
 
-    [btn addTarget:self action:@selector(click) forControlEvents:UIControlEventTouchUpInside];
+    [btn addTarget:self action:@selector(togglePanel) forControlEvents:UIControlEventTouchUpInside];
     [self addSubview:btn];
 
     UIPanGestureRecognizer *pan =
@@ -115,44 +100,115 @@ BOOL isTargetKey(NSString *key) {
     [g setTranslation:CGPointZero inView:self];
 }
 
-- (void)click {
+#pragma mark - 面板
 
-    UIAlertController *alert =
-    [UIAlertController alertControllerWithTitle:@"外挂菜单"
-                                        message:nil
-                                 preferredStyle:1];
+- (void)togglePanel {
 
-    [alert addAction:[UIAlertAction actionWithTitle:@"无限步数"
-                                             style:0
-                                           handler:^(id a){
-        kEnableStep = !kEnableStep;
-    }]];
+    if (self.panel) {
+        [self.panel removeFromSuperview];
+        self.panel = nil;
+        return;
+    }
 
-    [alert addAction:[UIAlertAction actionWithTitle:@"分数增强"
-                                             style:0
-                                           handler:^(id a){
-        kEnableScore = !kEnableScore;
-    }]];
+    UIWindow *window = getKeyWindow();
 
-    [alert addAction:[UIAlertAction actionWithTitle:@"道具无限"
-                                             style:0
-                                           handler:^(id a){
-        kEnableItem = !kEnableItem;
-    }]];
+    self.panel = [[UIView alloc] initWithFrame:CGRectMake(20, 100, 300, 400)];
+    self.panel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.8];
+    self.panel.layer.cornerRadius = 10;
 
-    [alert addAction:[UIAlertAction actionWithTitle:@"VIP解锁"
-                                             style:0
-                                           handler:^(id a){
-        kEnableVIP = !kEnableVIP;
-    }]];
+    NSArray *titles = @[@"无限步数", @"分数增强", @"VIP解锁"];
 
-    [[UIApplication sharedApplication].keyWindow.rootViewController
-     presentViewController:alert animated:YES completion:nil];
+    for (int i = 0; i < titles.count; i++) {
+
+        UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
+        btn.frame = CGRectMake(20, 20 + i * 50, 200, 40);
+        [btn setTitle:titles[i] forState:UIControlStateNormal];
+        btn.tag = i;
+
+        [btn addTarget:self action:@selector(toggle:) forControlEvents:UIControlEventTouchUpInside];
+        [self.panel addSubview:btn];
+    }
+
+    UITextView *logView = [[UITextView alloc] initWithFrame:CGRectMake(10, 180, 280, 200)];
+    logView.backgroundColor = [UIColor blackColor];
+    logView.textColor = [UIColor greenColor];
+    logView.font = [UIFont systemFontOfSize:10];
+
+    [self.panel addSubview:logView];
+
+    [HackLogger shared].textView = logView;
+
+    [window addSubview:self.panel];
+}
+
+- (void)toggle:(UIButton *)btn {
+
+    if (btn.tag == 0) kEnableStep = !kEnableStep;
+    if (btn.tag == 1) kEnableScore = !kEnableScore;
+    if (btn.tag == 2) kEnableVIP = !kEnableVIP;
+
+    [[HackLogger shared] log:[NSString stringWithFormat:@"开关%d -> %@", (int)btn.tag, @"切换"]];
 }
 
 @end
 
-#pragma mark - 注入
+#pragma mark - 万能 Hook（调试型）
+
+%hook NSDictionary
+
+- (id)objectForKey:(id)key {
+
+    id value = %orig;
+
+    if (![key isKindOfClass:[NSString class]]) return value;
+
+    NSString *k = [(NSString *)key lowercaseString];
+
+    if ([k containsString:@"vip"] && kEnableVIP) {
+        [[HackLogger shared] log:@"VIP 命中"];
+        return @(1);
+    }
+
+    if (([k containsString:@"coin"] || [k containsString:@"gold"]) && kEnableScore) {
+        [[HackLogger shared] log:@"金币命中"];
+        return @(999999);
+    }
+
+    if ([k containsString:@"step"] && kEnableStep) {
+        [[HackLogger shared] log:@"步数命中"];
+        return @(999);
+    }
+
+    return value;
+}
+
+%end
+
+#pragma mark - 网络日志（仅调试）
+
+%hook NSURLSession
+
+- (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request
+                            completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))completionHandler {
+
+    [[HackLogger shared] log:[NSString stringWithFormat:@"URL: %@", request.URL.absoluteString]];
+
+    return %orig(request, ^(NSData *data, NSURLResponse *res, NSError *err) {
+
+        if (data) {
+            NSString *str = [[NSString alloc] initWithData:data encoding:4];
+            if (str.length < 200) {
+                [[HackLogger shared] log:str];
+            }
+        }
+
+        completionHandler(data, res, err);
+    });
+}
+
+%end
+
+#pragma mark - 注入入口
 
 %hook UIApplication
 
@@ -162,10 +218,13 @@ BOOL isTargetKey(NSString *key) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1 * NSEC_PER_SEC),
                    dispatch_get_main_queue(), ^{
 
-        UIWindow *window = [UIApplication sharedApplication].keyWindow;
+        UIWindow *window = getKeyWindow();
+        if (!window) return;
 
         HackView *v = [[HackView alloc] init];
         [window addSubview:v];
+
+        [[HackLogger shared] log:@"插件已加载"];
     });
 }
 
