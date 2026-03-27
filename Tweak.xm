@@ -7,7 +7,7 @@ static BOOL kEnableStep = YES;
 static BOOL kEnableScore = YES;
 static BOOL kEnableVIP = YES;
 
-#pragma mark - Window 获取（适配 iOS13+）
+#pragma mark - Window 获取
 
 UIWindow *getKeyWindow() {
     UIWindow *window = nil;
@@ -30,7 +30,7 @@ UIWindow *getKeyWindow() {
     return window;
 }
 
-#pragma mark - 日志系统
+#pragma mark - Logger
 
 @interface HackLogger : NSObject
 @property (nonatomic, strong) UITextView *textView;
@@ -50,22 +50,19 @@ UIWindow *getKeyWindow() {
 }
 
 - (void)log:(NSString *)msg {
-
     dispatch_async(dispatch_get_main_queue(), ^{
-
         NSString *old = self.textView.text ?: @"";
-        NSString *new = [old stringByAppendingFormat:@"\n%@", msg];
+        NSString *newStr = [old stringByAppendingFormat:@"\n%@", msg];
+        self.textView.text = newStr;
 
-        self.textView.text = new;
-
-        NSRange range = NSMakeRange(new.length - 1, 1);
+        NSRange range = NSMakeRange(newStr.length - 1, 1);
         [self.textView scrollRangeToVisible:range];
     });
 }
 
 @end
 
-#pragma mark - 悬浮窗 UI
+#pragma mark - UI
 
 @interface HackView : UIView
 @property (nonatomic, strong) UIView *panel;
@@ -74,7 +71,6 @@ UIWindow *getKeyWindow() {
 @implementation HackView
 
 - (instancetype)init {
-
     self = [super initWithFrame:CGRectMake(100, 200, 60, 60)];
 
     self.backgroundColor = [UIColor redColor];
@@ -100,8 +96,6 @@ UIWindow *getKeyWindow() {
     [g setTranslation:CGPointZero inView:self];
 }
 
-#pragma mark - 面板
-
 - (void)togglePanel {
 
     if (self.panel) {
@@ -111,6 +105,7 @@ UIWindow *getKeyWindow() {
     }
 
     UIWindow *window = getKeyWindow();
+    if (!window) return;
 
     self.panel = [[UIView alloc] initWithFrame:CGRectMake(20, 100, 300, 400)];
     self.panel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.8];
@@ -147,12 +142,12 @@ UIWindow *getKeyWindow() {
     if (btn.tag == 1) kEnableScore = !kEnableScore;
     if (btn.tag == 2) kEnableVIP = !kEnableVIP;
 
-    [[HackLogger shared] log:[NSString stringWithFormat:@"开关%d -> %@", (int)btn.tag, @"切换"]];
+    [[HackLogger shared] log:[NSString stringWithFormat:@"切换开关: %d", (int)btn.tag]];
 }
 
 @end
 
-#pragma mark - 万能 Hook（调试型）
+#pragma mark - Hook NSDictionary
 
 %hook NSDictionary
 
@@ -184,7 +179,7 @@ UIWindow *getKeyWindow() {
 
 %end
 
-#pragma mark - 网络日志（仅调试）
+#pragma mark - 网络日志
 
 %hook NSURLSession
 
@@ -196,7 +191,7 @@ UIWindow *getKeyWindow() {
     return %orig(request, ^(NSData *data, NSURLResponse *res, NSError *err) {
 
         if (data) {
-            NSString *str = [[NSString alloc] initWithData:data encoding:4];
+            NSString *str = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
             if (str.length < 200) {
                 [[HackLogger shared] log:str];
             }
@@ -224,7 +219,7 @@ UIWindow *getKeyWindow() {
         HackView *v = [[HackView alloc] init];
         [window addSubview:v];
 
-        [[HackLogger shared] log:@"插件已加载"];
+        [[HackLogger shared] log:@"插件加载成功"];
     });
 }
 
