@@ -1,9 +1,9 @@
-Package: com.eric.adblock
-Name: AdBlockerPro
+Package: com.happyelements.eric
+Name: XiaoXiaoLeHack
 Depends: mobilesubstrate (>= 0.9.5000)
 Version: 1.0.0
 Architecture: iphoneos-arm
-Description: AdBlockerPro
+Description: XiaoXiaoLeHack
 Maintainer: Mr.Eric
 Author: Mr.Eric
 Section: Tweaks
