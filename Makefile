@@ -1,10 +1,11 @@
-ARCHS = arm64
-TARGET = iphone:latest:14.0
+ARCHS = arm64 arm64e
+TARGET = iphone:clang:latest:latest
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = AdBlockerPro
-AdBlockerPro_FILES = Tweak.xm
-AdBlockerPro_CFLAGS = -fobjc-arc
+TWEAK_NAME = XiaoXiaoLeHack
+
+XiaoXiaoLeHack_FILES = Tweak.xm
+XiaoXiaoLeHack_FRAMEWORKS = UIKit Foundation
 
 include $(THEOS_MAKE_PATH)/tweak.mk
