@@ -1,113 +1,172 @@
-// Tweak.xm
 #import <UIKit/UIKit.h>
-#import <Foundation/Foundation.h>
 #import <objc/runtime.h>
-#import <objc/message.h>
 
-#pragma mark - 工具函数
-static void swizzleMethod(Class cls, SEL original, SEL replacement) {
-    Method origMethod = class_getInstanceMethod(cls, original);
-    Method newMethod = class_getInstanceMethod(cls, replacement);
-    if (class_addMethod(cls, original, method_getImplementation(newMethod), method_getTypeEncoding(newMethod))) {
-        class_replaceMethod(cls, replacement, method_getImplementation(origMethod), method_getTypeEncoding(origMethod));
-    } else {
-        method_exchangeImplementations(origMethod, newMethod);
-    }
-}
+static BOOL kEnableStep = YES;
+static BOOL kEnableScore = YES;
+static BOOL kEnableItem = YES;
+static BOOL kEnableVIP = YES;
 
-static void setPropertyIfExists(id obj, NSString *propertyName, id value) {
-    NSString *setterName = [NSString stringWithFormat:@"set%@:", [propertyName capitalizedString]];
-    SEL setter = NSSelectorFromString(setterName);
-    if ([obj respondsToSelector:setter]) {
-        ((void (*)(id, SEL, id))objc_msgSend)(obj, setter, value);
-    }
-}
+#pragma mark - 自动识别关键字段
 
-#pragma mark - 核心功能设置
-static void enableAllPrivacyFeatures(id userInfo) {
-    setPropertyIfExists(userInfo, @"isTracelessAccess", @YES);
-    setPropertyIfExists(userInfo, @"isGlobalViewSecretly", @YES);
-    setPropertyIfExists(userInfo, @"isAgeStealth", @YES);
-    setPropertyIfExists(userInfo, @"isRoleStealth", @YES);
-    setPropertyIfExists(userInfo, @"isStealthDistance", @YES);
-    setPropertyIfExists(userInfo, @"isHideLastOperate", @YES);
-    setPropertyIfExists(userInfo, @"isHideDistance", @YES);
-}
+BOOL isTargetKey(NSString *key) {
+    NSArray *keys = @[
+        @"score", @"coin", @"gold",
+        @"step", @"energy",
+        @"vip", @"member", @"pro"
+    ];
 
-static void enableScreenshotProtection(void) {
-    Class managerClass = NSClassFromString(@"BDChatProtectionManager");
-    if (managerClass) {
-        SEL sharedSel = NSSelectorFromString(@"sharedInstance");
-        if ([managerClass respondsToSelector:sharedSel]) {
-            id manager = ((id (*)(id, SEL))objc_msgSend)(managerClass, sharedSel);
-            if (manager && [manager respondsToSelector:NSSelectorFromString(@"setIs_prohibit_chat_screenshot:")]) {
-                ((void (*)(id, SEL, BOOL))objc_msgSend)(manager, NSSelectorFromString(@"setIs_prohibit_chat_screenshot:"), YES);
-            }
+    for (NSString *k in keys) {
+        if ([[key lowercaseString] containsString:k]) {
+            return YES;
         }
     }
-    Class modelClass = NSClassFromString(@"BDChatProtectionModel");
-    if (modelClass) {
-        SEL sharedSel = NSSelectorFromString(@"sharedModel");
-        if ([modelClass respondsToSelector:sharedSel]) {
-            id model = ((id (*)(id, SEL))objc_msgSend)(modelClass, sharedSel);
-            if (model) {
-                setPropertyIfExists(model, @"is_prohibit_chat_screenshot", @YES);
-            }
-        }
-    }
+    return NO;
 }
 
-#pragma mark - Hook 用户信息对象的初始化
-static void setupUserInfoHook(void) {
-    Class BDUserInfo = NSClassFromString(@"BDUserInfo");
-    if (!BDUserInfo) return;
+#pragma mark - Hook NSDictionary（万能入口）
 
-    SEL originalInit = @selector(initWithCoder:);
-    __block IMP originalImp = NULL;
+%hook NSDictionary
 
-    IMP newImp = imp_implementationWithBlock(^(id self, NSCoder *coder) {
-        id result = ((id (*)(id, SEL, NSCoder*))originalImp)(self, originalInit, coder);
-        if (result) {
-            enableAllPrivacyFeatures(result);
+- (id)objectForKey:(id)key {
+
+    id value = %orig;
+
+    if (![key isKindOfClass:[NSString class]]) return value;
+
+    NSString *k = [(NSString *)key lowercaseString];
+
+    if (isTargetKey(k)) {
+
+        if ([k containsString:@"vip"] && kEnableVIP) {
+            return @(1);
         }
-        return result;
+
+        if (([k containsString:@"coin"] || [k containsString:@"gold"]) && kEnableScore) {
+            return @(999999);
+        }
+
+        if ([k containsString:@"step"] && kEnableStep) {
+            return @(999);
+        }
+    }
+
+    return value;
+}
+
+%end
+
+#pragma mark - 越狱检测绕过
+
+%hook NSFileManager
+
+- (BOOL)fileExistsAtPath:(NSString *)path {
+
+    if ([path containsString:@"Cydia"] ||
+        [path containsString:@"Substrate"] ||
+        [path containsString:@"apt"]) {
+        return NO;
+    }
+
+    return %orig;
+}
+
+%end
+
+#pragma mark - getenv 防检测
+
+%hook NSProcessInfo
+
+- (NSDictionary *)environment {
+    return @{};
+}
+
+%end
+
+#pragma mark - UI 悬浮窗
+
+@interface HackView : UIView
+@end
+
+@implementation HackView
+
+- (instancetype)init {
+    self = [super initWithFrame:CGRectMake(100, 200, 60, 60)];
+
+    self.backgroundColor = [UIColor redColor];
+    self.layer.cornerRadius = 30;
+
+    UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
+    btn.frame = self.bounds;
+    [btn setTitle:@"Hack" forState:UIControlStateNormal];
+
+    [btn addTarget:self action:@selector(click) forControlEvents:UIControlEventTouchUpInside];
+    [self addSubview:btn];
+
+    UIPanGestureRecognizer *pan =
+    [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(pan:)];
+    [self addGestureRecognizer:pan];
+
+    return self;
+}
+
+- (void)pan:(UIPanGestureRecognizer *)g {
+    CGPoint p = [g translationInView:self];
+    self.center = CGPointMake(self.center.x + p.x, self.center.y + p.y);
+    [g setTranslation:CGPointZero inView:self];
+}
+
+- (void)click {
+
+    UIAlertController *alert =
+    [UIAlertController alertControllerWithTitle:@"外挂菜单"
+                                        message:nil
+                                 preferredStyle:1];
+
+    [alert addAction:[UIAlertAction actionWithTitle:@"无限步数"
+                                             style:0
+                                           handler:^(id a){
+        kEnableStep = !kEnableStep;
+    }]];
+
+    [alert addAction:[UIAlertAction actionWithTitle:@"分数增强"
+                                             style:0
+                                           handler:^(id a){
+        kEnableScore = !kEnableScore;
+    }]];
+
+    [alert addAction:[UIAlertAction actionWithTitle:@"道具无限"
+                                             style:0
+                                           handler:^(id a){
+        kEnableItem = !kEnableItem;
+    }]];
+
+    [alert addAction:[UIAlertAction actionWithTitle:@"VIP解锁"
+                                             style:0
+                                           handler:^(id a){
+        kEnableVIP = !kEnableVIP;
+    }]];
+
+    [[UIApplication sharedApplication].keyWindow.rootViewController
+     presentViewController:alert animated:YES completion:nil];
+}
+
+@end
+
+#pragma mark - 注入
+
+%hook UIApplication
+
+- (void)didFinishLaunching {
+    %orig;
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1 * NSEC_PER_SEC),
+                   dispatch_get_main_queue(), ^{
+
+        UIWindow *window = [UIApplication sharedApplication].keyWindow;
+
+        HackView *v = [[HackView alloc] init];
+        [window addSubview:v];
     });
-
-    Method method = class_getInstanceMethod(BDUserInfo, originalInit);
-    if (method) {
-        originalImp = method_getImplementation(method);
-        class_replaceMethod(BDUserInfo, @selector(privacy_initWithCoder:), newImp, method_getTypeEncoding(method));
-        swizzleMethod(BDUserInfo, originalInit, @selector(privacy_initWithCoder:));
-    }
 }
 
-#pragma mark - 监听登录成功，再次确保设置
-static void observeLoginSuccess(void) {
-    [[NSNotificationCenter defaultCenter] addObserverForName:@"BDLoginSuccessNotification"
-                                                      object:nil
-                                                       queue:[NSOperationQueue mainQueue]
-                                                  usingBlock:^(NSNotification *note) {
-        id appDelegate = [UIApplication sharedApplication].delegate;
-        if (appDelegate) {
-            id mineModel = [appDelegate valueForKey:@"mineModel"];
-            if (mineModel && [mineModel respondsToSelector:NSSelectorFromString(@"userInfo")]) {
-                id userInfo = [mineModel valueForKey:@"userInfo"];
-                if (userInfo) enableAllPrivacyFeatures(userInfo);
-            } else {
-                id userInfo = [appDelegate valueForKey:@"userInfo"];
-                if (userInfo) enableAllPrivacyFeatures(userInfo);
-            }
-        }
-        enableScreenshotProtection();
-    }];
-}
-
-#pragma mark - 入口
-__attribute__((constructor))
-static void initialize(void) {
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        setupUserInfoHook();
-        enableScreenshotProtection();
-        observeLoginSuccess();
-    });
-}
+%end
