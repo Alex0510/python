@@ -1,9 +1,9 @@
-Package: com.happyelements.eric
-Name: XiaoXiaoLeHack
+Package: com.eric.dokacamera
+Name: dokapro
 Depends: mobilesubstrate (>= 0.9.5000)
 Version: 1.0.0
 Architecture: iphoneos-arm
-Description: XiaoXiaoLeHack
+Description: dokapro
 Maintainer: Mr.Eric
 Author: Mr.Eric
 Section: Tweaks
