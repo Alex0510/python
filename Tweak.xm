@@ -35,6 +35,10 @@ static void swizzleClassMethod(Class cls, SEL originalSelector, IMP newImp) {
     }
 }
 
+static void dummyStart(id self, SEL _cmd) {
+    logMessage(@"SKProductsRequest start called, ignoring.");
+}
+
 __attribute__((constructor))
 static void initialize() {
     logMessage(@"Loaded");
@@ -76,47 +80,26 @@ static void initialize() {
         }
     }
 
-    // 3. Hook NSUserDefaults
-    Class ud = NSClassFromString(@"NSUserDefaults");
-    if (ud) {
-        SEL boolSel = @selector(boolForKey:);
-        Method m = class_getInstanceMethod(ud, boolSel);
-        if (m) {
-            IMP orig = method_getImplementation(m);
-            IMP new = imp_implementationWithBlock(^BOOL(id self, NSString *key) {
-                BOOL original = ((BOOL (*)(id, SEL, NSString *))orig)(self, boolSel, key);
-                if ([key containsString:@"vip"] || [key containsString:@"pro"] || [key containsString:@"subscription"]) {
-                    logMessage(@"NSUserDefaults boolForKey: %@ -> YES (original %d)", key, original);
-                    return YES;
-                }
-                return original;
-            });
-            method_setImplementation(m, new);
-            logMessage(@"Swizzled NSUserDefaults boolForKey:");
-        }
-    }
-
-    // 4. Hook SKPaymentQueue canMakePayments
+    // 3. Hook SKPaymentQueue canMakePayments
     Class skq = NSClassFromString(@"SKPaymentQueue");
     if (skq) {
         swizzleClassMethod(skq, @selector(canMakePayments), (IMP)alwaysYES);
     }
 
-    // 5. Hook SKProductsRequest start (阻止无效产品 ID 错误)
+    // 4. Hook SKProductsRequest start (阻止无效产品 ID 错误)
     Class skr = NSClassFromString(@"SKProductsRequest");
     if (skr) {
         SEL startSel = @selector(start);
         Method m = class_getInstanceMethod(skr, startSel);
         if (m) {
-            IMP new = imp_implementationWithBlock(^(id self) {
-                logMessage(@"SKProductsRequest start called, ignoring.");
-            });
-            method_setImplementation(m, new);
+            method_setImplementation(m, (IMP)dummyStart);
             logMessage(@"Swizzled SKProductsRequest start");
+        } else {
+            logMessage(@"SKProductsRequest start method not found");
         }
     }
 
-    // 6. 设置 UserDefaults VIP 标志
+    // 5. 设置 UserDefaults VIP 标志
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     [defaults setBool:YES forKey:@"com.ydgn.dokacamera.isVip"];
     [defaults setBool:YES forKey:@"isPro"];
