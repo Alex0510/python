@@ -1,79 +1,61 @@
-// Tweak.xm
+// UnlockPro.m
+#import <Foundation/Foundation.h>
+#import <objc/runtime.h>
 
-#import <UIKit/UIKit.h>
+#pragma mark - Hook 实现
 
-static UIWindow *floatingWindow = nil;
-
-static void showAlert(NSString *message) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIViewController *rootVC = [UIApplication sharedApplication].keyWindow.rootViewController;
-        if (!rootVC) return;
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"提示"
-                                                                       message:message
-                                                                preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:nil]];
-        [rootVC presentViewController:alert animated:YES completion:nil];
-    });
+// 通用返回 YES 的 IMP
+static BOOL alwaysYES() {
+    return YES;
 }
 
-static void enableInfiniteResources() {
-    // 仅显示提示，不做任何实际修改，确保不崩溃
-    showAlert(@"功能开发中，请等待后续更新");
-}
-
-%hook AppController
-
-- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
-    BOOL ret = %orig;
-    
-    // 延迟创建悬浮窗
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if (floatingWindow) return;
-        
-        CGFloat size = 50;
-        CGFloat margin = 10;
-        CGFloat x = [UIScreen mainScreen].bounds.size.width - size - margin;
-        CGFloat y = 100;
-        CGRect frame = CGRectMake(x, y, size, size);
-        
-        floatingWindow = [[UIWindow alloc] initWithFrame:frame];
-        floatingWindow.windowLevel = UIWindowLevelAlert + 1;
-        floatingWindow.backgroundColor = [UIColor clearColor];
-        floatingWindow.hidden = NO;
-        
-        UIButton *button = [UIButton buttonWithType:UIButtonTypeCustom];
-        button.frame = CGRectMake(0, 0, size, size);
-        button.backgroundColor = [UIColor redColor];
-        button.layer.cornerRadius = size / 2;
-        button.layer.shadowColor = [UIColor blackColor].CGColor;
-        button.layer.shadowOffset = CGSizeMake(2, 2);
-        button.layer.shadowOpacity = 0.5;
-        [button setTitle:@"🐦" forState:UIControlStateNormal];
-        [button addTarget:self action:@selector(floatingButtonTapped:) forControlEvents:UIControlEventTouchUpInside];
-        [floatingWindow addSubview:button];
-        
-        UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
-        [button addGestureRecognizer:pan];
-    });
-    
-    return ret;
-}
-
-- (void)floatingButtonTapped:(UIButton *)sender {
-    enableInfiniteResources();
-}
-
-- (void)handlePan:(UIPanGestureRecognizer *)gesture {
-    if (gesture.state == UIGestureRecognizerStateChanged) {
-        CGPoint translation = [gesture translationInView:gesture.view.superview];
-        gesture.view.center = CGPointMake(gesture.view.center.x + translation.x,
-                                          gesture.view.center.y + translation.y);
-        [gesture setTranslation:CGPointZero inView:gesture.view.superview];
+// 替换方法
+static void swizzleMethod(Class cls, SEL originalSelector, IMP newImp) {
+    Method method = class_getInstanceMethod(cls, originalSelector);
+    if (method) {
+        method_setImplementation(method, newImp);
+        NSLog(@"✅ UnlockPro: Swizzled %@", NSStringFromSelector(originalSelector));
+    } else {
+        NSLog(@"⚠️ UnlockPro: Method not found - %@", NSStringFromSelector(originalSelector));
     }
 }
 
-%end
+__attribute__((constructor))
+static void initialize() {
+    NSLog(@"🚀 UnlockPro loaded");
 
-%ctor {
-    // 可选初始化
+    // 1. 尝试 hook FWStoreKitManager 的订阅状态判断方法
+    Class fwStoreKitManager = NSClassFromString(@"FWStoreKitManager");
+    if (fwStoreKitManager) {
+        // 常见的方法名
+        SEL possibleSelectors[] = {
+            sel_registerName("hasSubscribed"),
+            sel_registerName("isSubscribed"),
+            sel_registerName("isVip"),
+            sel_registerName("isPro")
+        };
+        for (int i = 0; i < sizeof(possibleSelectors)/sizeof(SEL); i++) {
+            swizzleMethod(fwStoreKitManager, possibleSelectors[i], (IMP)alwaysYES);
+        }
+    } else {
+        NSLog(@"⚠️ UnlockPro: FWStoreKitManager class not found");
+    }
+
+    // 2. 尝试 hook VipManager 的 VIP 状态判断方法
+    Class vipManager = NSClassFromString(@"VipManager");
+    if (vipManager) {
+        SEL possibleSelectors[] = {
+            sel_registerName("isVip"),
+            sel_registerName("hasSubscribed"),
+            sel_registerName("isPro")
+        };
+        for (int i = 0; i < sizeof(possibleSelectors)/sizeof(SEL); i++) {
+            swizzleMethod(vipManager, possibleSelectors[i], (IMP)alwaysYES);
+        }
+    } else {
+        NSLog(@"⚠️ UnlockPro: VipManager class not found");
+    }
+
+    // 3. 可选：直接修改 NSUserDefaults 中与 VIP 相关的键值（风险较大，谨慎使用）
+    // 这里不推荐自动实现，因为可能影响其他功能
 }
