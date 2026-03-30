@@ -1,7 +1,16 @@
-// UnlockPro_Enhanced.m
+// Tweak.xm
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 #import <StoreKit/StoreKit.h>
+
+#pragma mark - Logging
+static void logMessage(NSString *format, ...) {
+    va_list args;
+    va_start(args, format);
+    NSString *msg = [[NSString alloc] initWithFormat:format arguments:args];
+    va_end(args);
+    NSLog(@"🔓 UnlockPro: %@", msg);
+}
 
 #pragma mark - 通用返回 YES 的 IMP
 static BOOL alwaysYES() {
@@ -16,19 +25,8 @@ static BOOL alwaysYESWithInteger(id self, SEL _cmd, NSInteger integer) {
     return YES;
 }
 
-static id alwaysNil(id self, SEL _cmd) {
-    return nil;
-}
-
-static void logMessage(NSString *format, ...) {
-    va_list args;
-    va_start(args, format);
-    NSString *msg = [[NSString alloc] initWithFormat:format arguments:args];
-    va_end(args);
-    NSLog(@"🔓 UnlockPro: %@", msg);
-}
-
-static void swizzleMethod(Class cls, SEL originalSelector, IMP newImp, const char *types) {
+#pragma mark - Method Swizzling 辅助函数
+static void swizzleMethod(Class cls, SEL originalSelector, IMP newImp) {
     if (!cls) return;
     Method method = class_getInstanceMethod(cls, originalSelector);
     if (method) {
@@ -39,7 +37,7 @@ static void swizzleMethod(Class cls, SEL originalSelector, IMP newImp, const cha
     }
 }
 
-static void swizzleClassMethod(Class cls, SEL originalSelector, IMP newImp, const char *types) {
+static void swizzleClassMethod(Class cls, SEL originalSelector, IMP newImp) {
     if (!cls) return;
     Method method = class_getClassMethod(cls, originalSelector);
     if (method) {
@@ -50,6 +48,7 @@ static void swizzleClassMethod(Class cls, SEL originalSelector, IMP newImp, cons
     }
 }
 
+#pragma mark - Constructor
 __attribute__((constructor))
 static void initialize() {
     logMessage(@"Loaded");
@@ -78,7 +77,7 @@ static void initialize() {
         ];
         for (NSString *selName in boolSelectors) {
             SEL sel = NSSelectorFromString(selName);
-            swizzleMethod(cls, sel, (IMP)alwaysYES, "c@:");
+            swizzleMethod(cls, sel, (IMP)alwaysYES);
         }
     }
 
@@ -103,7 +102,7 @@ static void initialize() {
                 NSArray *selNames = @[@"isVip", @"hasSubscribed", @"isPro"];
                 for (NSString *selName in selNames) {
                     SEL sel = NSSelectorFromString(selName);
-                    swizzleMethod(cls, sel, (IMP)alwaysYES, "c@:");
+                    swizzleMethod(cls, sel, (IMP)alwaysYES);
                 }
             }
         }
@@ -129,11 +128,11 @@ static void initialize() {
         }
     }
 
-    // 4. Hook SKPaymentQueue 的 canMakePayments 强制返回 NO，可能阻止购买弹窗
+    // 4. Hook SKPaymentQueue 的 canMakePayments 强制返回 YES
     Class skQueue = NSClassFromString(@"SKPaymentQueue");
     if (skQueue) {
         SEL canMakeSel = @selector(canMakePayments);
-        swizzleClassMethod(skQueue, canMakeSel, (IMP)alwaysYES, "c@:");
+        swizzleClassMethod(skQueue, canMakeSel, (IMP)alwaysYES);
     }
 
     // 5. Hook SKProductsRequest 的 start，阻止无效产品 ID 的错误
@@ -142,10 +141,9 @@ static void initialize() {
         SEL startSel = @selector(start);
         Method origMethod = class_getInstanceMethod(skRequest, startSel);
         if (origMethod) {
-            IMP origImp = method_getImplementation(origMethod);
+            // 不需要原 IMP，直接替换为空实现，避免调用真正的 start
             IMP newImp = imp_implementationWithBlock(^(id self) {
                 logMessage(@"SKProductsRequest start called, ignoring.");
-                // 不真正执行，避免错误弹窗
             });
             method_setImplementation(origMethod, newImp);
             logMessage(@"Swizzled SKProductsRequest start");
@@ -153,7 +151,6 @@ static void initialize() {
     }
 
     // 6. 尝试直接修改 UserDefaults 中的 VIP 标志（如果应用使用本地标志）
-    // 这需要知道具体键名，这里仅示例
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     [defaults setBool:YES forKey:@"com.ydgn.dokacamera.isVip"];
     [defaults setBool:YES forKey:@"isPro"];
