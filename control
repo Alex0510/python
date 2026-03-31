@@ -1,9 +1,9 @@
-Package: com.air-matters.eric
-Name: CloakProUnlock
+Package: com.qing2000.eric
+Name: qinghook
 Depends: mobilesubstrate (>= 0.9.5000)
 Version: 1.0.0
 Architecture: iphoneos-arm
-Description: CloakProUnlock
+Description: qinghook
 Maintainer: Mr.Eric
 Author: Mr.Eric
 Section: Tweaks
