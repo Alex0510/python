@@ -1,9 +1,9 @@
-Package: com.eric.dokacamera
-Name: dokapro
+Package: com.air-matters.eric
+Name: CloakProUnlock
 Depends: mobilesubstrate (>= 0.9.5000)
 Version: 1.0.0
 Architecture: iphoneos-arm
-Description: dokapro
+Description: CloakProUnlock
 Maintainer: Mr.Eric
 Author: Mr.Eric
 Section: Tweaks
