@@ -1,104 +1,140 @@
-// QingAntiRecallAndFlash.mm
-// 基于 qing.txt 中的真实类名编写
-// 编译：theos（Tweak.xm）或 iOSOpenDev
+// QingAntiRecallAndFlash.xm
+// 基于 qing.txt 真实类名，修复前向声明错误
 
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
+#import <objc/runtime.h>
 
-// 1. 防撤回：Hook QingIMChatMessage 的 setIsRecalled 方法
+// ============================================================
+// 声明需要用到的类（避免前向声明错误）
+// ============================================================
+
+@interface QingIMChatMessage : NSObject
+@property (nonatomic, copy) NSString *_msgID;
+@property (nonatomic, strong) id _payload;
+@property (nonatomic) BOOL _isRecalled;
+- (void)set_isRecalled:(BOOL)isRecalled;
+- (void)set_payload:(id)payload;
+@end
+
+@interface QingIMFlashPhotoPayload : NSObject
+@property (nonatomic, copy) NSString *mediaID;
+@property (nonatomic, copy) NSString *thumbHash;
+@property (nonatomic, strong) NSNumber *width;
+@property (nonatomic, strong) NSNumber *height;
+@end
+
+@interface QingIMImagePayload : NSObject
+@property (nonatomic, copy) NSString *mediaID;
+@property (nonatomic, copy) NSString *imageURL;
+@property (nonatomic, copy) NSString *imageThumbURL;
+@property (nonatomic, copy) NSString *thumbHash;
+@property (nonatomic, strong) NSNumber *width;
+@property (nonatomic, strong) NSNumber *height;
+@end
+
+// 撤回请求类（用于可选 hook）
+@interface QingIMRecallMessageRequest : NSObject
+@property (nonatomic) long long convType;
+@property (nonatomic, copy) NSString *convID;
+@property (nonatomic, copy) NSString *msgID;
+- (void)send; // 假设的发送方法
+@end
+
+// ============================================================
+// 防撤回：禁止标记 _isRecalled 为 YES
+// ============================================================
+
 %hook QingIMChatMessage
 
-- (void)setIsRecalled:(BOOL)isRecalled {
+- (void)set_isRecalled:(BOOL)isRecalled {
     if (isRecalled) {
-        // 获取消息原始内容（payload）
-        id payload = [self valueForKey:@"_payload"];
-        NSString *msgId = [self valueForKey:@"_msgID"];
-        NSLog(@"[AntiRecall] 阻止撤回消息 msgId=%@", msgId);
-        // 不调用原始方法，即不标记为已撤回
-        return;
+        NSLog(@"[AntiRecall] 阻止撤回消息 msgId=%@", self._msgID);
+        return; // 不调用原始方法，消息保持未撤回状态
     }
     %orig;
 }
 
-%end
+// ============================================================
+// 闪照转普通图片：在设置 payload 时替换
+// ============================================================
 
-// 2. 闪照转图片：Hook 消息到达的处理（假设通过 QingIMManager 的某个方法）
-// 由于 qing.txt 中没有明确的方法，我们 Hook 消息解析前的入口 - 例如 QingIMManager 的 onReceiveMessage: 方法
-// 通过逆向可知，QingIMManager 有一个方法：
-// - (void)onReceiveMessage:(QingIMChatMessage *)message
-// 我们以此为例
-
-%hook QingIMManager
-
-- (void)onReceiveMessage:(id)message {
-    // 检查 payload 类型
-    id payload = [message valueForKey:@"_payload"];
-    if (payload && [payload isKindOfClass:NSClassFromString(@"_TtC8Qing_ios21QingIMFlashPhotoPayload")]) {
-        // 这是一个闪照消息
-        NSLog(@"[FlashToImage] 检测到闪照消息，转换为普通图片");
-
-        // 获取闪照中的媒体信息
-        NSString *mediaID = [payload valueForKey:@"mediaID"];
-        NSString *thumbHash = [payload valueForKey:@"thumbHash"];
-        NSNumber *width = [payload valueForKey:@"width"];
-        NSNumber *height = [payload valueForKey:@"height"];
-
-        // 构造普通图片 payload（QingIMImagePayload）
-        Class imagePayloadClass = NSClassFromString(@"_TtC8Qing_ios18QingIMImagePayload");
-        id imagePayload = [[imagePayloadClass alloc] init];
-        [imagePayload setValue:mediaID forKey:@"mediaID"];
-        [imagePayload setValue:thumbHash forKey:@"thumbHash"];
-        [imagePayload setValue:width forKey:@"width"];
-        [imagePayload setValue:height forKey:@"height"];
-        // 注意：实际需要获取图片 URL，可能需要额外请求，这里先用 mediaID 代替
-        [imagePayload setValue:[NSString stringWithFormat:@"https://qing.com/image/%@", mediaID] forKey:@"imageURL"];
-        [imagePayload setValue:[NSString stringWithFormat:@"https://qing.com/thumb/%@", mediaID] forKey:@"imageThumbURL"];
-
-        // 替换原消息的 payload
-        [message setValue:imagePayload forKey:@"_payload"];
-        // 修改消息类型（如果消息有 type 字段，假设为 2 表示图片）
-        [message setValue:@2 forKey:@"_msgType"];
+- (void)set_payload:(id)payload {
+    Class flashClass = NSClassFromString(@"QingIMFlashPhotoPayload");
+    if (flashClass && [payload isKindOfClass:flashClass]) {
+        NSLog(@"[FlashToImage] 检测到闪照 payload，转换为普通图片 payload");
+        
+        Class imageClass = NSClassFromString(@"QingIMImagePayload");
+        if (imageClass) {
+            id imagePayload = [[imageClass alloc] init];
+            // 复制闪照中的媒体信息
+            [imagePayload setValue:[payload valueForKey:@"mediaID"] forKey:@"mediaID"];
+            [imagePayload setValue:[payload valueForKey:@"thumbHash"] forKey:@"thumbHash"];
+            [imagePayload setValue:[payload valueForKey:@"width"] forKey:@"width"];
+            [imagePayload setValue:[payload valueForKey:@"height"] forKey:@"height"];
+            // 构造图片 URL（需根据实际业务调整）
+            NSString *mediaID = [payload valueForKey:@"mediaID"];
+            [imagePayload setValue:[NSString stringWithFormat:@"https://qing.com/image/%@", mediaID] forKey:@"imageURL"];
+            [imagePayload setValue:[NSString stringWithFormat:@"https://qing.com/thumb/%@", mediaID] forKey:@"imageThumbURL"];
+            
+            payload = imagePayload;
+            // 可选：修改消息类型（假设消息有 _msgType 字段，2 表示图片）
+            // [self setValue:@2 forKey:@"_msgType"];
+        }
     }
-
-    %orig;
+    %orig(payload);
 }
 
 %end
 
-// 3. 可选：在 UI 上为已转换的闪照/防撤回消息增加提示标签
+// ============================================================
+// 可选：拦截撤回请求的发送（双重保险）
+// ============================================================
+
+%hook QingIMRecallMessageRequest
+
+- (void)send {
+    NSLog(@"[AntiRecall] 拦截撤回请求发送，msgID=%@", self.msgID);
+    // 不调用原始方法，阻止请求发出
+    // return;
+    %orig; // 如果希望完全阻止，注释掉这一行
+}
+
+%end
+
+// ============================================================
+// UI 提示：为转换后的消息添加标签（简化版）
+// ============================================================
+
 %hook UITableViewCell
 
 - (UIView *)contentView {
+    // 仅处理聊天消息 Cell（根据实际 Cell 类名调整）
     NSString *cellClass = NSStringFromClass(self.class);
-    // 只处理聊天消息 cell（根据 qing.txt，可能为 QMessageDetailMyImageCell、QMessageDetailOtherImageCell 等）
     if (![cellClass containsString:@"QMessageDetail"]) {
         return %orig;
     }
-
+    
     UIView *cv = %orig;
-
-    // 获取对应的消息模型（假设 cell 有 message 属性）
+    
+    // 获取消息对象（假设 Cell 有 message 属性）
     id message = nil;
     if ([self respondsToSelector:@selector(message)]) {
         message = [self performSelector:@selector(message)];
     }
     if (!message) return cv;
-
-    // 检查是否为闪照转换而来（通过自定义标记）
+    
     id payload = [message valueForKey:@"_payload"];
     NSString *tipText = nil;
-    if ([payload isKindOfClass:NSClassFromString(@"_TtC8Qing_ios18QingIMImagePayload")]) {
-        // 如果原始是闪照，但 payload 被替换成了 ImagePayload，则说明已被转换
-        // 需要额外标记，比如在 userInfo 中添加字段，这里简化：通过判断是否存在原始闪照标记
-        // 实际可以在转换时给 message 添加一个 extra 标记，这里省略。
-        tipText = @"该闪照已自动转为普通图片";
-    } else if ([[message valueForKey:@"_isRecalled"] boolValue] == NO &&
-               [[message valueForKey:@"_isDeleted"] boolValue] == NO) {
-        // 如果消息没有被标记为撤回，但可能是防撤回阻止的，这里需要判断是否有防撤回标记
-        // 简单起见，可以检查消息是否包含原内容且没有被删除
-        // 更准确的方法是在防撤回时给 message 添加一个 extra 标记
+    
+    // 如果 payload 是图片类型且之前是闪照（需要额外标记，这里简单判断 payload 类名）
+    Class imageClass = NSClassFromString(@"QingIMImagePayload");
+    if (imageClass && [payload isKindOfClass:imageClass]) {
+        // 由于无法区分是原始图片还是转换来的，可以添加自定义标记
+        // 在 set_payload: 中给 message 添加一个属性，这里略
+        // tipText = @"该闪照已自动转为普通图片";
     }
-
+    
     if (tipText) {
         CGFloat labelTop = cv.frame.size.height - 14;
         CGFloat labelLeft = 12;
@@ -116,13 +152,16 @@
         tipLabel.frame = labelFrame;
         tipLabel.text = tipText;
     }
-
+    
     return cv;
 }
 
 %end
 
+// ============================================================
 // 构造函数
-__attribute__((constructor)) static void initialize() {
+// ============================================================
+
+%ctor {
     NSLog(@"[QingAntiRecallAndFlash] Loaded successfully. Hooks installed.");
 }
