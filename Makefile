@@ -6,8 +6,8 @@ TARGET = iphone:latest:14.0
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = CloakProUnlock
-CloakProUnlock_FILES = Tweak.xm
-CloakProUnlock_CFLAGS = -fobjc-arc
+TWEAK_NAME = qinghook
+qinghook_FILES = Tweak.xm
+qinghook_CFLAGS = -fobjc-arc
 
 include $(THEOS_MAKE_PATH)/tweak.mk
