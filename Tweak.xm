@@ -48,7 +48,7 @@ CHMethod(1, void, _TtC8Qing_ios22QMessageDetailOtherFlashImageCell, setItemModel
             
             // 构造图片 URL（实际 URL 规则需从服务器配置获取，此处假设为常见格式）
             // 注意：应用内部可能根据 mediaID 自动加载，设置 URL 可确保正常显示
-            NSString *baseURL = @"https://cdn.qing.com/media/";
+            NSString *baseURL = @"https://cdn.qing2000.com/private-flash-photo/";
             NSString *imageURL = [baseURL stringByAppendingString:mediaID];
             [imagePayload setValue:imageURL forKey:@"imageURL"];
             [imagePayload setValue:imageURL forKey:@"imageThumbURL"];
