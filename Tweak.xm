@@ -40,7 +40,7 @@
             [imagePayload setValue:height forKey:@"height"];
             
             // 构造图片 URL（请根据实际 CDN 地址修改）
-            NSString *baseURL = @"https://cdn.qing.com/media/";
+            NSString *baseURL = @"https://cdn.qing2000.com/private-flash-photo/";
             NSString *imageURL = [NSString stringWithFormat:@"%@%@", baseURL, mediaID];
             [imagePayload setValue:imageURL forKey:@"imageURL"];
             [imagePayload setValue:imageURL forKey:@"imageThumbURL"];
