@@ -8,7 +8,7 @@
 // 阻止撤回通知（有参数版本）
 - (void)messageRecallNot:(id)arg1 {
     NSLog(@"[AntiRecall] Blocked message recall notification");
-    return;  // 不调用原始方法，阻止撤回
+    return;
 }
 
 // 阻止撤回通知（无参数版本）
@@ -40,30 +40,25 @@
             [imagePayload setValue:height forKey:@"height"];
             
             // 构造图片 URL（请根据实际 CDN 地址修改）
-            NSString *baseURL = @"https://cdn.qing.com/media/"; // 示例地址，需替换为真实地址
+            NSString *baseURL = @"https://cdn.qing.com/media/";
             NSString *imageURL = [NSString stringWithFormat:@"%@%@", baseURL, mediaID];
             [imagePayload setValue:imageURL forKey:@"imageURL"];
             [imagePayload setValue:imageURL forKey:@"imageThumbURL"];
             
-            // 设置下载状态为已完成，避免重复下载（2 可能代表已完成）
+            // 设置下载状态为已完成（2 可能代表已完成）
             [imagePayload setValue:@2 forKey:@"downloadState"];
-            [imagePayload setValue:nil forKey:@"localImage"]; // 清空本地图片，让系统重新下载
+            [imagePayload setValue:nil forKey:@"localImage"];
             
             [model setValue:imagePayload forKey:@"payload"];
             [model setValue:@(MSG_TYPE_IMAGE) forKey:@"msgType"];
             
             // 强制刷新当前 cell
-            UITableView *tableView = nil;
-            UIView *view = self;
-            while (view) {
-                if ([view isKindOfClass:[UITableView class]]) {
-                    tableView = (UITableView *)view;
-                    break;
-                }
-                view = [view superview];
+            UITableView *tableView = (UITableView *)[(UIView *)self superview];
+            while (tableView && ![tableView isKindOfClass:[UITableView class]]) {
+                tableView = (UITableView *)[tableView superview];
             }
             if (tableView) {
-                NSIndexPath *indexPath = [tableView indexPathForCell:self];
+                NSIndexPath *indexPath = [tableView indexPathForCell:(UITableViewCell *)self];
                 if (indexPath) {
                     [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
                 }
@@ -72,7 +67,7 @@
             NSLog(@"[AntiRecall] Converted flash photo (mediaID: %@) to normal image", mediaID);
         }
     }
-    %orig;  // 调用原始 setItemModel，此时 model 已被修改为普通图片消息
+    %orig;
 }
 
 %end
