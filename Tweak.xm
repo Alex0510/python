@@ -1,167 +1,81 @@
-// QingAntiRecallAndFlash.xm
-// 基于 qing.txt 真实类名，修复前向声明错误
-
-#import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
-#import <objc/runtime.h>
+#import <UIKit/UIKit.h>
+#import <CaptainHook/CaptainHook.h>
 
-// ============================================================
-// 声明需要用到的类（避免前向声明错误）
-// ============================================================
+// 声明需要 Hook 的类（基于头文件中的 @interface）
+CHDeclareClass(_TtC8Qing_ios22QMessageDetailController);
+CHDeclareClass(_TtC8Qing_ios22QMessageDetailOtherFlashImageCell);
+CHDeclareClass(_TtC8Qing_ios17QingIMChatMessage);
+CHDeclareClass(_TtC8Qing_ios21QingIMFlashPhotoPayload);
+CHDeclareClass(_TtC8Qing_ios17QingIMImagePayload);
 
-@interface QingIMChatMessage : NSObject
-@property (nonatomic, copy) NSString *_msgID;
-@property (nonatomic, strong) id _payload;
-@property (nonatomic) BOOL _isRecalled;
-- (void)set_isRecalled:(BOOL)isRecalled;
-- (void)set_payload:(id)payload;
-@end
+// 消息类型常量（来自头文件 enum QingIMMsgType）
+#define MSG_TYPE_FLASH_PHOTO 9   // 闪照
+#define MSG_TYPE_IMAGE 2         // 普通图片
 
-@interface QingIMFlashPhotoPayload : NSObject
-@property (nonatomic, copy) NSString *mediaID;
-@property (nonatomic, copy) NSString *thumbHash;
-@property (nonatomic, strong) NSNumber *width;
-@property (nonatomic, strong) NSNumber *height;
-@end
+// 闪照状态常量（来自头文件 enum QingIMFlashPhotoStatus）
+// 0=Unknown, 1=Readable, 2=Destroyed, 3=Expired
+#define FLASH_PHOTO_STATUS_READABLE 1
 
-@interface QingIMImagePayload : NSObject
-@property (nonatomic, copy) NSString *mediaID;
-@property (nonatomic, copy) NSString *imageURL;
-@property (nonatomic, copy) NSString *imageThumbURL;
-@property (nonatomic, copy) NSString *thumbHash;
-@property (nonatomic, strong) NSNumber *width;
-@property (nonatomic, strong) NSNumber *height;
-@end
+CHOptimizeMemory
 
-// 撤回请求类（用于可选 hook）
-@interface QingIMRecallMessageRequest : NSObject
-@property (nonatomic) long long convType;
-@property (nonatomic, copy) NSString *convID;
-@property (nonatomic, copy) NSString *msgID;
-- (void)send; // 假设的发送方法
-@end
-
-// ============================================================
-// 防撤回：禁止标记 _isRecalled 为 YES
-// ============================================================
-
-%hook QingIMChatMessage
-
-- (void)set_isRecalled:(BOOL)isRecalled {
-    if (isRecalled) {
-        NSLog(@"[AntiRecall] 阻止撤回消息 msgId=%@", self._msgID);
-        return; // 不调用原始方法，消息保持未撤回状态
-    }
-    %orig;
+#pragma mark - 防撤回：拦截消息撤回通知
+CHMethod(0, void, _TtC8Qing_ios22QMessageDetailController, messageRecallNot) {
+    // 不执行原方法，阻止撤回
+    NSLog(@"[AntiRecall] Blocked message recall");
 }
 
-// ============================================================
-// 闪照转普通图片：在设置 payload 时替换
-// ============================================================
-
-- (void)set_payload:(id)payload {
-    Class flashClass = NSClassFromString(@"QingIMFlashPhotoPayload");
-    if (flashClass && [payload isKindOfClass:flashClass]) {
-        NSLog(@"[FlashToImage] 检测到闪照 payload，转换为普通图片 payload");
-        
-        Class imageClass = NSClassFromString(@"QingIMImagePayload");
-        if (imageClass) {
-            id imagePayload = [[imageClass alloc] init];
-            // 复制闪照中的媒体信息
-            [imagePayload setValue:[payload valueForKey:@"mediaID"] forKey:@"mediaID"];
-            [imagePayload setValue:[payload valueForKey:@"thumbHash"] forKey:@"thumbHash"];
-            [imagePayload setValue:[payload valueForKey:@"width"] forKey:@"width"];
-            [imagePayload setValue:[payload valueForKey:@"height"] forKey:@"height"];
-            // 构造图片 URL（需根据实际业务调整）
-            NSString *mediaID = [payload valueForKey:@"mediaID"];
-            [imagePayload setValue:[NSString stringWithFormat:@"https://qing.com/image/%@", mediaID] forKey:@"imageURL"];
-            [imagePayload setValue:[NSString stringWithFormat:@"https://qing.com/thumb/%@", mediaID] forKey:@"imageThumbURL"];
+#pragma mark - 闪照转普通图片：在单元格设置模型时转换
+CHMethod(1, void, _TtC8Qing_ios22QMessageDetailOtherFlashImageCell, setItemModel, _TtC8Qing_ios17QingIMChatMessage *, model) {
+    // 获取消息类型
+    NSInteger msgType = [[model valueForKey:@"msgType"] integerValue];
+    if (msgType == MSG_TYPE_FLASH_PHOTO) {
+        // 获取闪照载荷
+        id flashPayload = [model valueForKey:@"payload"];
+        if ([flashPayload isKindOfClass:CHClass(_TtC8Qing_ios21QingIMFlashPhotoPayload)]) {
+            // 提取闪照关键字段
+            NSString *mediaID = [flashPayload valueForKey:@"mediaID"];
+            NSString *thumbHash = [flashPayload valueForKey:@"thumbHash"];
+            NSNumber *width = [flashPayload valueForKey:@"width"];
+            NSNumber *height = [flashPayload valueForKey:@"height"];
             
-            payload = imagePayload;
-            // 可选：修改消息类型（假设消息有 _msgType 字段，2 表示图片）
-            // [self setValue:@2 forKey:@"_msgType"];
+            // 创建普通图片载荷
+            id imagePayload = [[CHClass(_TtC8Qing_ios17QingIMImagePayload) alloc] init];
+            [imagePayload setValue:mediaID forKey:@"mediaID"];
+            [imagePayload setValue:thumbHash forKey:@"thumbHash"];
+            [imagePayload setValue:width forKey:@"width"];
+            [imagePayload setValue:height forKey:@"height"];
+            
+            // 构造图片 URL（实际 URL 规则需从服务器配置获取，此处假设为常见格式）
+            // 注意：应用内部可能根据 mediaID 自动加载，设置 URL 可确保正常显示
+            NSString *baseURL = @"https://cdn.qing.com/media/";
+            NSString *imageURL = [baseURL stringByAppendingString:mediaID];
+            [imagePayload setValue:imageURL forKey:@"imageURL"];
+            [imagePayload setValue:imageURL forKey:@"imageThumbURL"];
+            
+            // 替换消息的载荷和类型
+            [model setValue:imagePayload forKey:@"payload"];
+            [model setValue:@(MSG_TYPE_IMAGE) forKey:@"msgType"];
+            
+            NSLog(@"[AntiRecall] Converted flash photo to normal image");
         }
     }
-    %orig(payload);
+    // 调用原方法显示单元格
+    CHSuper(1, _TtC8Qing_ios22QMessageDetailOtherFlashImageCell, setItemModel, model);
 }
 
-%end
-
-// ============================================================
-// 可选：拦截撤回请求的发送（双重保险）
-// ============================================================
-
-%hook QingIMRecallMessageRequest
-
-- (void)send {
-    NSLog(@"[AntiRecall] 拦截撤回请求发送，msgID=%@", self.msgID);
-    // 不调用原始方法，阻止请求发出
-    // return;
-    %orig; // 如果希望完全阻止，注释掉这一行
-}
-
-%end
-
-// ============================================================
-// UI 提示：为转换后的消息添加标签（简化版）
-// ============================================================
-
-%hook UITableViewCell
-
-- (UIView *)contentView {
-    // 仅处理聊天消息 Cell（根据实际 Cell 类名调整）
-    NSString *cellClass = NSStringFromClass(self.class);
-    if (![cellClass containsString:@"QMessageDetail"]) {
-        return %orig;
-    }
+#pragma mark - 加载时钩子
+CHConstructor {
+    // 加载类
+    CHLoadLateClass(_TtC8Qing_ios22QMessageDetailController);
+    CHLoadLateClass(_TtC8Qing_ios22QMessageDetailOtherFlashImageCell);
+    CHLoadLateClass(_TtC8Qing_ios17QingIMChatMessage);
+    CHLoadLateClass(_TtC8Qing_ios21QingIMFlashPhotoPayload);
+    CHLoadLateClass(_TtC8Qing_ios17QingIMImagePayload);
     
-    UIView *cv = %orig;
+    // 注册 Hook
+    CHHook(0, _TtC8Qing_ios22QMessageDetailController, messageRecallNot);
+    CHHook(1, _TtC8Qing_ios22QMessageDetailOtherFlashImageCell, setItemModel);
     
-    // 获取消息对象（假设 Cell 有 message 属性）
-    id message = nil;
-    if ([self respondsToSelector:@selector(message)]) {
-        message = [self performSelector:@selector(message)];
-    }
-    if (!message) return cv;
-    
-    id payload = [message valueForKey:@"_payload"];
-    NSString *tipText = nil;
-    
-    // 如果 payload 是图片类型且之前是闪照（需要额外标记，这里简单判断 payload 类名）
-    Class imageClass = NSClassFromString(@"QingIMImagePayload");
-    if (imageClass && [payload isKindOfClass:imageClass]) {
-        // 由于无法区分是原始图片还是转换来的，可以添加自定义标记
-        // 在 set_payload: 中给 message 添加一个属性，这里略
-        // tipText = @"该闪照已自动转为普通图片";
-    }
-    
-    if (tipText) {
-        CGFloat labelTop = cv.frame.size.height - 14;
-        CGFloat labelLeft = 12;
-        CGRect labelFrame = CGRectMake(labelLeft, labelTop, cv.frame.size.width - 24, 14);
-        NSInteger tag = 20250403;
-        UILabel *tipLabel = (UILabel *)[self viewWithTag:tag];
-        if (!tipLabel) {
-            tipLabel = [[UILabel alloc] init];
-            tipLabel.tag = tag;
-            tipLabel.font = [UIFont systemFontOfSize:10];
-            tipLabel.textColor = [UIColor grayColor];
-            tipLabel.backgroundColor = [UIColor clearColor];
-            [self addSubview:tipLabel];
-        }
-        tipLabel.frame = labelFrame;
-        tipLabel.text = tipText;
-    }
-    
-    return cv;
-}
-
-%end
-
-// ============================================================
-// 构造函数
-// ============================================================
-
-%ctor {
-    NSLog(@"[QingAntiRecallAndFlash] Loaded successfully. Hooks installed.");
+    NSLog(@"[AntiRecall] Loaded successfully");
 }
