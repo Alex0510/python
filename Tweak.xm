@@ -23,7 +23,6 @@
 
 @interface DTPMainViewController : UIViewController
 - (BOOL)dtp_hasCachedSubscriptionAccess;
-- (id)dtp_evaluateAccessDecisionForContext:(id)context;
 - (void)dtp_presentSubscriptionOverlayIfNeededWithReason:(id)reason force:(BOOL)force;
 - (void)dtp_refreshEntitlementsSilentlyIfPossible;
 - (void)dtp_checkSubscriptionOrPresentOverlayAndMaybeRefresh;
@@ -71,18 +70,6 @@
 
 - (BOOL)dtp_hasCachedSubscriptionAccess {
     return YES;
-}
-
-- (id)dtp_evaluateAccessDecisionForContext:(id)context {
-    id decision = %orig;
-    if (decision) {
-        [decision setHasAccess:YES];
-        [decision setShouldShowPaywall:NO];
-        [decision setAllowDismiss:YES];
-        [decision setShouldRefreshEntitlementsSilently:NO];
-        [decision setReason:@"Unlocked by dylib"];
-    }
-    return decision;
 }
 
 - (void)dtp_presentSubscriptionOverlayIfNeededWithReason:(id)reason force:(BOOL)force {
