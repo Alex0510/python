@@ -1,116 +1,134 @@
+#import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
-#import <StoreKit/StoreKit.h>
 
-#define LOG(fmt, ...) NSLog(@"[UnlockVIP] " fmt, ##__VA_ARGS__)
+// 声明需要用到的类（来自头文件）
+@interface DTPAccessDecision : NSObject
+@property BOOL hasAccess;
+@property BOOL shouldShowPaywall;
+@property BOOL allowDismiss;
+@property BOOL shouldRefreshEntitlementsSilently;
+@property (nonatomic, copy) NSString *reason;
+- (void)setHasAccess:(BOOL)hasAccess;
+- (void)setShouldShowPaywall:(BOOL)shouldShowPaywall;
+- (void)setAllowDismiss:(BOOL)allowDismiss;
+- (void)setShouldRefreshEntitlementsSilently:(BOOL)shouldRefreshEntitlementsSilently;
+- (void)setReason:(NSString *)reason;
+@end
 
-static NSArray<NSString *> *vipKeys = @[
-    @"isVip", @"vipStatus", @"userType", @"isPro",
-    @"hasActiveSubscription", @"isPremiumUser", @"vipExpired"
-];
+@interface DTPStoreKitHelper : NSObject
+- (void)checkEntitlementWithCompletion:(void (^)(BOOL hasLifetime, BOOL hasSubscription, NSDate *expiry, NSDate *signedDate, NSError *error))completion;
+- (void)syncAndCheckEntitlementWithCompletion:(void (^)(BOOL hasLifetime, BOOL hasSubscription, NSDate *expiry, NSDate *signedDate, NSError *error))completion;
+- (void)resetLocalCaches;
+@end
 
-/* 强制 UserDefaults 返回 VIP 相关值为 YES */
-%hook NSUserDefaults
+@interface DTPMainViewController : UIViewController
+- (BOOL)dtp_hasCachedSubscriptionAccess;
+- (id)dtp_evaluateAccessDecisionForContext:(id)context;
+- (void)dtp_presentSubscriptionOverlayIfNeededWithReason:(id)reason force:(BOOL)force;
+- (void)dtp_refreshEntitlementsSilentlyIfPossible;
+- (void)dtp_checkSubscriptionOrPresentOverlayAndMaybeRefresh;
+@end
 
-- (BOOL)boolForKey:(NSString *)defaultName {
-    if ([vipKeys containsObject:defaultName]) {
-        LOG(@"boolForKey: %@ -> YES", defaultName);
-        return YES;
-    }
-    return %orig;
-}
+// ===== Hook 开始 =====
 
-- (id)objectForKey:(NSString *)defaultName {
-    id obj = %orig;
-    if ([vipKeys containsObject:defaultName]) {
-        if (obj == nil || [obj boolValue] == NO) {
-            LOG(@"objectForKey: %@ -> @YES", defaultName);
-            return @YES;
-        }
-    }
-    return obj;
-}
+%hook DTPStoreKitHelper
 
-%end
-
-/* 钩子：SwiftyStoreKit 收据验证类，强制返回成功 */
-%hook _TtC14SwiftyStoreKit12InAppReceipt
-
-- (void)verifyReceipt:(id)arg1 completion:(id)arg2 {
-    LOG(@"InAppReceipt verifyReceipt: 强制返回成功");
-    void (^completion)(BOOL, id) = arg2;
+// 使 checkEntitlementWithCompletion: 返回已授权状态
+- (void)checkEntitlementWithCompletion:(void (^)(BOOL hasLifetime, BOOL hasSubscription, NSDate *expiry, NSDate *signedDate, NSError *error))completion {
     if (completion) {
-        completion(YES, @{@"status": @0, @"receipt": @{}});
+        // 设置永久有效，到期时间为遥远的未来
+        NSDate *farFuture = [NSDate distantFuture];
+        NSDate *now = [NSDate date];
+        completion(YES, YES, farFuture, now, nil);
     }
-    // 不调用原始方法，避免网络验证
+}
+
+// 同样处理同步检查
+- (void)syncAndCheckEntitlementWithCompletion:(void (^)(BOOL hasLifetime, BOOL hasSubscription, NSDate *expiry, NSDate *signedDate, NSError *error))completion {
+    if (completion) {
+        NSDate *farFuture = [NSDate distantFuture];
+        NSDate *now = [NSDate date];
+        completion(YES, YES, farFuture, now, nil);
+    }
+}
+
+// 防止清除本地缓存（即使调用也不会影响我们的“假”状态）
+- (void)resetLocalCaches {
+    // 什么都不做，或者调用原方法但不影响结果（原方法可能会清除真实缓存，但我们不关心）
+    // %orig; // 如果需要，可以调用原方法，但可能引起副作用，建议忽略
+    NSLog(@"DTPUnlock: resetLocalCaches called - ignored");
 }
 
 %end
 
-/* 备用：钩子 AppleReceiptValidator（如果存在） */
-%hook AppleReceiptValidator
+%hook DTPAccessDecision
 
-- (void)validateReceipt:(id)completion {
-    LOG(@"AppleReceiptValidator validateReceipt: 强制成功");
-    void (^completionBlock)(BOOL, id) = completion;
-    if (completionBlock) {
-        completionBlock(YES, @{});
-    }
+// 确保 hasAccess 返回 YES
+- (BOOL)hasAccess {
+    return YES;
+}
+
+- (void)setHasAccess:(BOOL)hasAccess {
+    // 强制设为 YES
+    %orig(YES);
 }
 
 %end
 
-/* 修改账户界面：显示VIP并隐藏升级按钮 */
-%hook AccountViewController
+%hook DTPMainViewController
 
-- (void)viewDidLoad {
-    %orig;
-    id vc = self;
-    if ([vc respondsToSelector:@selector(vipOrPoint)]) {
-        UILabel *label = [vc performSelector:@selector(vipOrPoint)];
-        label.text = @"VIP会员";
-    }
-    if ([vc respondsToSelector:@selector(upgradeBtn)]) {
-        UIButton *btn = [vc performSelector:@selector(upgradeBtn)];
-        btn.hidden = YES;
-    }
+// 直接返回 YES，表示已有缓存订阅
+- (BOOL)dtp_hasCachedSubscriptionAccess {
+    return YES;
+}
+
+// 返回一个完全授权的决策对象
+- (id)dtp_evaluateAccessDecisionForContext:(id)context {
+    // 获取原始类并创建实例
+    Class decisionClass = %c(DTPAccessDecision);
+    id decision = [[decisionClass alloc] init];
+    [decision setHasAccess:YES];
+    [decision setShouldShowPaywall:NO];
+    [decision setAllowDismiss:YES];
+    [decision setShouldRefreshEntitlementsSilently:NO];
+    [decision setReason:@"Unlocked by dylib"];
+    return decision;
+}
+
+// 阻止显示订阅弹窗
+- (void)dtp_presentSubscriptionOverlayIfNeededWithReason:(id)reason force:(BOOL)force {
+    // 完全忽略，不显示任何付费墙
+    NSLog(@"DTPUnlock: Suppressed subscription overlay (reason: %@, force: %d)", reason, force);
+}
+
+// 阻止任何自动刷新检查（可选，避免网络请求）
+- (void)dtp_refreshEntitlementsSilentlyIfPossible {
+    // 什么都不做，保持假状态
+    NSLog(@"DTPUnlock: Suppressed silent entitlement refresh");
+}
+
+// 阻止显示订阅相关的检查（例如进入应用时的弹窗）
+- (void)dtp_checkSubscriptionOrPresentOverlayAndMaybeRefresh {
+    // 什么都不做，直接认为已通过
+    NSLog(@"DTPUnlock: Suppressed subscription check overlay");
 }
 
 %end
 
-/* 主界面：隐藏广告容器并强制为付费线路 */
-%hook MainTunnelViewController
-
-- (void)viewDidLoad {
-    %orig;
-    id vc = self;
-    if ([vc respondsToSelector:@selector(adContainer)]) {
-        UIView *adView = [vc performSelector:@selector(adContainer)];
-        adView.hidden = YES;
+// 可选：额外 hook 一个工具类中的权限判断（如果存在）
+%hook DTPStoreKitHelper (Private)
+// 确保任何购买相关的方法也不会触发真实支付界面（安全）
+- (void)purchaseWithProductId:(NSString *)productId completion:(void (^)(BOOL success, NSError *error))completion {
+    // 直接返回成功，避免弹出系统支付对话框
+    if (completion) {
+        completion(YES, nil);
     }
-    if ([vc respondsToSelector:@selector(setIsFreeLine:)]) {
-        [vc performSelector:@selector(setIsFreeLine:) withObject:@NO];
-    }
+    NSLog(@"DTPUnlock: purchaseWithProductId intercepted, returning success without real purchase.");
 }
-
 %end
 
-/* 隧道列表：强制显示所有VIP节点 */
-%hook TunnelListController
-
-- (void)viewDidLoad {
-    %orig;
-    id vc = self;
-    if ([vc respondsToSelector:@selector(setShowFree:)]) {
-        [vc performSelector:@selector(setShowFree:) withObject:@NO];
-    }
-    if ([vc respondsToSelector:@selector(changeType:)]) {
-        [vc performSelector:@selector(changeType:) withObject:@NO];
-    }
-}
-
-%end
-
-/* 初始化 */
-%ctor {
-    LOG("暴雪VPN VIP解锁插件已加载");
-}
+// 注意：%hook 的类名必须与运行时完全一致。Swift 类可能包含模块名，如 _TtC9DTPAIiPad17DTPStoreKitHelper
+// 上面的 %hook 使用短类名，如果无效可改用完整的混淆名：
+// %hook _TtC9DTPAIiPad17DTPStoreKitHelper
+// %hook _TtC9DTPAIiPad14DTPProductInfo (不需要)
+// 但 Logos 支持直接使用 Objective-C 类名（即使是 Swift 类也可以）
