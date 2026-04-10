@@ -74,13 +74,14 @@
 }
 
 - (id)dtp_evaluateAccessDecisionForContext:(id)context {
-    Class decisionClass = %c(DTPAccessDecision);
-    id decision = [[decisionClass alloc] init];
-    [decision setHasAccess:YES];
-    [decision setShouldShowPaywall:NO];
-    [decision setAllowDismiss:YES];
-    [decision setShouldRefreshEntitlementsSilently:NO];
-    [decision setReason:@"Unlocked by dylib"];
+    id decision = %orig;
+    if (decision) {
+        [decision setHasAccess:YES];
+        [decision setShouldShowPaywall:NO];
+        [decision setAllowDismiss:YES];
+        [decision setShouldRefreshEntitlementsSilently:NO];
+        [decision setReason:@"Unlocked by dylib"];
+    }
     return decision;
 }
 
