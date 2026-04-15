@@ -9,24 +9,23 @@
     dispatch_async(dispatch_get_main_queue(), ^{
         UIWindow *keyWindow = nil;
 
-        if (@available(iOS 13.0, *)) {
-            for (UIWindowScene *scene in [UIApplication sharedApplication].connectedScenes) {
-                if (scene.activationState == UISceneActivationStateForegroundActive) {
-                    for (UIWindow *window in scene.windows) {
-                        if (window.isKeyWindow) {
-                            keyWindow = window;
-                            break;
-                        }
-                    }
+if (@available(iOS 13.0, *)) {
+    for (UIWindowScene *scene in [UIApplication sharedApplication].connectedScenes) {
+        if (scene.activationState == UISceneActivationStateForegroundActive) {
+            for (UIWindow *window in scene.windows) {
+                if (window.isKeyWindow) {
+                    keyWindow = window;
+                    break;
                 }
-                if (keyWindow) break;
             }
         }
+        if (keyWindow) break;
+    }
+}
 
-        if (!keyWindow) {
-            keyWindow = [UIApplication sharedApplication].windows.firstObject;
-        }
-
+if (!keyWindow) {
+    keyWindow = [UIApplication sharedApplication].windows.firstObject;
+}
         NDFloatingView *view = [[NDFloatingView alloc] initWithFrame:CGRectMake(100, 200, 60, 60)];
         view.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.6];
         view.layer.cornerRadius = 30;
@@ -60,72 +59,16 @@
 }
 
 - (void)action {
-    // 获取当前顶层视图控制器
-    UIViewController *topVC = [self topMostViewController];
-    if (!topVC) {
-        // 降级方案：直接清理并退出
-        [self performCleanupAndExit];
-        return;
-    }
-    
-    // 显示清理中弹窗
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"清理中"
-                                                                   message:@"正在执行一键新机，请稍候..."
-                                                            preferredStyle:UIAlertControllerStyleAlert];
-    [topVC presentViewController:alert animated:YES completion:nil];
-    
-    // 异步执行清理操作，避免阻塞 UI
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        [[NDManager shared] cleanSandbox];
-        [[NDManager shared] cleanKeychain];
-        [[NDManager shared] resetUserDefaults];
-        
-        NSLog(@"[NewDevice] 一键新机完成");
-        
-        // 回到主线程更新弹窗并退出
-        dispatch_async(dispatch_get_main_queue(), ^{
-            alert.title = @"清理完成";
-            alert.message = @"一键新机已完成，应用即将退出";
-            
-            // 延迟0.5秒，让用户看到提示后再退出
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                exit(0);
-            });
-        });
+
+    [[NDManager shared] cleanSandbox];
+    [[NDManager shared] cleanKeychain];
+    [[NDManager shared] resetUserDefaults];
+
+    NSLog(@"[NewDevice] 一键新机完成");
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        kill(getpid(), SIGKILL);
     });
-}
-
-// 直接清理并退出（无弹窗的降级方案）
-- (void)performCleanupAndExit {
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        [[NDManager shared] cleanSandbox];
-        [[NDManager shared] cleanKeychain];
-        [[NDManager shared] resetUserDefaults];
-        NSLog(@"[NewDevice] 一键新机完成（无弹窗降级）");
-        dispatch_async(dispatch_get_main_queue(), ^{
-            exit(0);
-        });
-    });
-}
-
-#pragma mark - Helper: 获取当前最顶层的 ViewController
-
-- (UIViewController *)topMostViewController {
-    UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
-    UIViewController *rootVC = keyWindow.rootViewController;
-    return [self topMostViewControllerFrom:rootVC];
-}
-
-- (UIViewController *)topMostViewControllerFrom:(UIViewController *)vc {
-    if ([vc isKindOfClass:[UINavigationController class]]) {
-        return [self topMostViewControllerFrom:[(UINavigationController *)vc topViewController]];
-    } else if ([vc isKindOfClass:[UITabBarController class]]) {
-        return [self topMostViewControllerFrom:[(UITabBarController *)vc selectedViewController]];
-    } else if (vc.presentedViewController) {
-        return [self topMostViewControllerFrom:vc.presentedViewController];
-    } else {
-        return vc;
-    }
 }
 
 @end
