@@ -1,9 +1,9 @@
-Package: com.dulatrackpro.eric
-Name: qinghook
-Depends: mobilesubstrate (>= 0.9.5000)
-Version: 1.0.0
+Package: com.newdevice.tweak
+Name: NewDeviceTweak
+Version: 1.0
 Architecture: iphoneos-arm
-Description: qinghook
-Maintainer: Mr.Eric
-Author: Mr.Eric
+Description: One-click new device tweak
+Maintainer: you
+Author: you
 Section: Tweaks
+Depends: mobilesubstrate
