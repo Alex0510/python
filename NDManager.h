@@ -1,11 +1,10 @@
 #import <Foundation/Foundation.h>
 
-@interface NDManager : NSObject
+@interface ACManager : NSObject
 
 + (instancetype)shared;
 
-- (void)cleanSandbox;
-- (void)cleanKeychain;
-- (void)resetUserDefaults;
+- (void)runFullClean;
+- (NSString *)currentBundle;
 
 @end
