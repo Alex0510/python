@@ -1,14 +1,11 @@
-ARCHS = arm64 arm64e
-TARGET = iphone:clang:latest:14.0
-
-THEOS_PACKAGE_SCHEME = rootless
+TARGET := iphone:clang:latest
+INSTALL_TARGET_PROCESSES = SpringBoard
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = NewDeviceTweak
+TWEAK_NAME = AllCleanPro
 
-NewDeviceTweak_FILES = Tweak.xm NDManager.m NDFloatingView.m
-NewDeviceTweak_FRAMEWORKS = UIKit Foundation Security
-NewDeviceTweak_CFLAGS = -fobjc-arc
+AllCleanPro_FILES = Tweak.xm ACManager.m ACFloating.m
+AllCleanPro_FRAMEWORKS = UIKit WebKit Security
 
 include $(THEOS_MAKE_PATH)/tweak.mk
