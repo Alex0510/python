@@ -1,5 +1,5 @@
 TARGET := iphone:clang:latest
-INSTALL_TARGET_PROCESSES = SpringBoard
+INSTALL_TARGET_PROCESSES = SpringBoard UIKit
 
 include $(THEOS)/makefiles/common.mk
 
