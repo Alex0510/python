@@ -38,9 +38,12 @@
     %orig;
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+
+        NSLog(@"[AllClean] 注入成功");
+
         static ACFloating *f = nil;
         if (!f) {
-            f = [ACFloating new];
+            f = [[ACFloating alloc] init];
         }
     });
 }
