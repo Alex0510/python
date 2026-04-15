@@ -7,8 +7,19 @@
 
 + (void)show {
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
+        UIWindow *keyWindow = nil;
 
+if (@available(iOS 13.0, *)) {
+    NSSet *scenes = [UIApplication sharedApplication].connectedScenes;
+    for (UIWindowScene *scene in scenes) {
+        if (scene.activationState == UISceneActivationStateForegroundActive) {
+            keyWindow = scene.windows.firstObject;
+            break;
+        }
+    }
+} else {
+    keyWindow = [UIApplication sharedApplication].keyWindow;
+}
         NDFloatingView *view = [[NDFloatingView alloc] initWithFrame:CGRectMake(100, 200, 60, 60)];
         view.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.6];
         view.layer.cornerRadius = 30;
