@@ -59,16 +59,11 @@ if (!keyWindow) {
 }
 
 - (void)action {
-
     [[NDManager shared] cleanSandbox];
     [[NDManager shared] cleanKeychain];
     [[NDManager shared] resetUserDefaults];
 
     NSLog(@"[NewDevice] 一键新机完成");
-
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        kill(getpid(), SIGKILL);
-    });
 }
 
 @end
