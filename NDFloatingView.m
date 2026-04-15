@@ -5,6 +5,7 @@
     UIButton *_btn;
 }
 
+// 获取 keyWindow，支持重试
 + (UIWindow *)getKeyWindow {
     UIWindow *keyWindow = nil;
 
@@ -30,14 +31,32 @@
 }
 
 + (void)show {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *window = [self getKeyWindow];
+    // 尝试获取 keyWindow，如果没有则延迟重试
+    [self tryShowWithRetryCount:0];
+}
 
++ (void)tryShowWithRetryCount:(int)count {
+    if (count > 10) { // 最多重试10次，约5秒
+        NSLog(@"[ND] 无法获取 keyWindow，放弃显示悬浮窗");
+        return;
+    }
+
+    UIWindow *window = [self getKeyWindow];
+    if (!window || window.rootViewController == nil) {
+        // 延迟0.5秒后重试
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+            [self tryShowWithRetryCount:count + 1];
+        });
+        return;
+    }
+
+    dispatch_async(dispatch_get_main_queue(), ^{
         NDFloatingView *view = [[NDFloatingView alloc] initWithFrame:CGRectMake(100, 200, 60, 60)];
         view.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.6];
         view.layer.cornerRadius = 30;
 
         [window addSubview:view];
+        NSLog(@"[ND] 悬浮窗已显示");
     });
 }
 
@@ -65,7 +84,7 @@
 }
 
 - (void)action {
-    // 执行清理（同步执行，保证完成后再杀进程）
+    // 执行清理（同步）
     [[NDManager shared] cleanSandbox];
     [[NDManager shared] cleanKeychain];
     [[NDManager shared] resetUserDefaults];
