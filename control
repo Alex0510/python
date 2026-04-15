@@ -1,9 +1,9 @@
-Package: com.newdevice.tweak
-Name: NewDeviceTweak
+Package: com.allclean.pro
+Name: AllClean Pro
+Depends: mobilesubstrate
 Version: 1.0
 Architecture: iphoneos-arm
-Description: One-click new device tweak
-Maintainer: you
-Author: you
+Description: Privacy reset & debug tool
+Maintainer: You
+Author: You
 Section: Tweaks
-Depends: mobilesubstrate
