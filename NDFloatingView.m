@@ -59,11 +59,18 @@ if (!keyWindow) {
 }
 
 - (void)action {
+
+    NSLog(@"[NewDevice] 开始一键新机");
+
+    // 1. 清数据
     [[NDManager shared] cleanSandbox];
     [[NDManager shared] cleanKeychain];
     [[NDManager shared] resetUserDefaults];
 
-    NSLog(@"[NewDevice] 一键新机完成");
-}
+    // 2. 生成新设备（如果你用了终极版 NDConfig）
+    if ([NSClassFromString(@"NDConfig") respondsToSelector:@selector(shared)]) {
+        id config = [NSClassFromString(@"NDConfig") performSelector:@selector(shared)];
+        if ([config respondsToSelector:@selector(generateNewProfile)]) {
+            [
 
 @end
