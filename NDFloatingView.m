@@ -1,0 +1,52 @@
+#import "NDFloatingView.h"
+#import "NDManager.h"
+
+@implementation NDFloatingView {
+    UIButton *_btn;
+}
+
++ (void)show {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
+
+        NDFloatingView *view = [[NDFloatingView alloc] initWithFrame:CGRectMake(100, 200, 60, 60)];
+        view.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.6];
+        view.layer.cornerRadius = 30;
+
+        [keyWindow addSubview:view];
+    });
+}
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+
+    _btn = [UIButton buttonWithType:UIButtonTypeSystem];
+    _btn.frame = self.bounds;
+    [_btn setTitle:@"新机" forState:UIControlStateNormal];
+    [_btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+
+    [_btn addTarget:self action:@selector(action) forControlEvents:UIControlEventTouchUpInside];
+    [self addSubview:_btn];
+
+    // 拖动
+    UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(move:)];
+    [self addGestureRecognizer:pan];
+
+    return self;
+}
+
+- (void)move:(UIPanGestureRecognizer *)g {
+    CGPoint t = [g translationInView:self];
+    self.center = CGPointMake(self.center.x + t.x, self.center.y + t.y);
+    [g setTranslation:CGPointZero inView:self];
+}
+
+- (void)action {
+    [[NDManager shared] cleanSandbox];
+    [[NDManager shared] cleanKeychain];
+    [[NDManager shared] resetUserDefaults];
+
+    NSLog(@"[NewDevice] 一键新机完成");
+}
+
+@end
