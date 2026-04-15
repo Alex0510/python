@@ -5,32 +5,39 @@
     UIButton *_btn;
 }
 
-+ (void)show {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *keyWindow = nil;
++ (UIWindow *)getKeyWindow {
+    UIWindow *keyWindow = nil;
 
-if (@available(iOS 13.0, *)) {
-    for (UIWindowScene *scene in [UIApplication sharedApplication].connectedScenes) {
-        if (scene.activationState == UISceneActivationStateForegroundActive) {
-            for (UIWindow *window in scene.windows) {
-                if (window.isKeyWindow) {
-                    keyWindow = window;
-                    break;
+    if (@available(iOS 13.0, *)) {
+        for (UIWindowScene *scene in [UIApplication sharedApplication].connectedScenes) {
+            if (scene.activationState == UISceneActivationStateForegroundActive) {
+                for (UIWindow *window in scene.windows) {
+                    if (window.isKeyWindow) {
+                        keyWindow = window;
+                        break;
+                    }
                 }
             }
+            if (keyWindow) break;
         }
-        if (keyWindow) break;
     }
+
+    if (!keyWindow) {
+        keyWindow = [UIApplication sharedApplication].windows.firstObject;
+    }
+
+    return keyWindow;
 }
 
-if (!keyWindow) {
-    keyWindow = [UIApplication sharedApplication].windows.firstObject;
-}
++ (void)show {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIWindow *window = [self getKeyWindow];
+
         NDFloatingView *view = [[NDFloatingView alloc] initWithFrame:CGRectMake(100, 200, 60, 60)];
         view.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.6];
         view.layer.cornerRadius = 30;
 
-        [keyWindow addSubview:view];
+        [window addSubview:view];
     });
 }
 
@@ -45,7 +52,6 @@ if (!keyWindow) {
     [_btn addTarget:self action:@selector(action) forControlEvents:UIControlEventTouchUpInside];
     [self addSubview:_btn];
 
-    // 拖动
     UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(move:)];
     [self addGestureRecognizer:pan];
 
@@ -59,11 +65,17 @@ if (!keyWindow) {
 }
 
 - (void)action {
+
     [[NDManager shared] cleanSandbox];
     [[NDManager shared] cleanKeychain];
     [[NDManager shared] resetUserDefaults];
 
-    NSLog(@"[NewDevice] 一键新机完成");
+    NSLog(@"[ND] 一键新机完成");
+
+    // 强制杀进程
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        kill(getpid(), SIGKILL);
+    });
 }
 
 @end
