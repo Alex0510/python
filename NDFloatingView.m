@@ -65,15 +65,15 @@
 }
 
 - (void)action {
-
+    // 执行清理（同步执行，保证完成后再杀进程）
     [[NDManager shared] cleanSandbox];
     [[NDManager shared] cleanKeychain];
     [[NDManager shared] resetUserDefaults];
 
-    NSLog(@"[ND] 一键新机完成");
+    NSLog(@"[ND] 一键新机完成，即将杀进程");
 
-    // 强制杀进程
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+    // 延迟极短时间确保日志输出，然后强制退出
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
         kill(getpid(), SIGKILL);
     });
 }
