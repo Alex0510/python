@@ -4,16 +4,16 @@
 @interface ACFloating : UIWindow
 @end
 
-#pragma mark - 网络日志（调试用途）
+#pragma mark - 网络日志（安全写法）
 
 %hook NSURLSession
 
 - (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request
-                            completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))completionHandler {
+                            completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *error))completionHandler {
 
     NSLog(@"[Net] URL: %@", request.URL.absoluteString);
 
-    return %orig(request, ^(NSData *data, NSURLResponse *res, NSError *err) {
+    void (^newBlock)(NSData *, NSURLResponse *, NSError *) = ^(NSData *data, NSURLResponse *response, NSError *error) {
 
         if (data) {
             NSString *str = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
@@ -21,9 +21,11 @@
         }
 
         if (completionHandler) {
-            completionHandler(data, res, err);
+            completionHandler(data, response, error);
         }
-    });
+    };
+
+    return %orig(request, newBlock);
 }
 
 %end
@@ -35,9 +37,11 @@
 - (void)didFinishLaunching {
     %orig;
 
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        static ACFloating *f;
-        f = [ACFloating new];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        static ACFloating *f = nil;
+        if (!f) {
+            f = [ACFloating new];
+        }
     });
 }
 
