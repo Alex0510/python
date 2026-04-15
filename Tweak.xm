@@ -1,40 +1,27 @@
-#import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#import "NDFloatingView.h"
 
-@interface DTPAccessDecision : NSObject
-@property BOOL hasAccess;
-@property BOOL shouldShowPaywall;
-@property BOOL allowDismiss;
-@property BOOL shouldRefreshEntitlementsSilently;
-@property (nonatomic, copy) NSString *reason;
-- (void)setHasAccess:(BOOL)hasAccess;
-- (void)setShouldShowPaywall:(BOOL)shouldShowPaywall;
-- (void)setAllowDismiss:(BOOL)allowDismiss;
-- (void)setShouldRefreshEntitlementsSilently:(BOOL)shouldRefreshEntitlementsSilently;
-- (void)setReason:(NSString *)reason;
-@end
+%hook UIDevice
 
-@interface DTPStoreKitHelper : NSObject
-- (void)checkEntitlementWithCompletion:(void (^)(BOOL hasLifetime, BOOL hasSubscription, NSDate *expiry, NSDate *signedDate, NSError *error))completion;
-- (void)syncAndCheckEntitlementWithCompletion:(void (^)(BOOL hasLifetime, BOOL hasSubscription, NSDate *expiry, NSDate *signedDate, NSError *error))completion;
-- (void)resetLocalCaches;
-- (void)purchaseWithProductId:(NSString *)productId completion:(void (^)(BOOL success, NSError *error))completion;
-@end
-
-@interface DTPMainViewController : UIViewController
-- (BOOL)dtp_hasCachedSubscriptionAccess;
-- (void)dtp_presentSubscriptionOverlayIfNeededWithReason:(id)reason force:(BOOL)force;
-- (void)dtp_refreshEntitlementsSilentlyIfPossible;
-- (void)dtp_checkSubscriptionOrPresentOverlayAndMaybeRefresh;
-@end
-
-%hook DTPStoreKitHelper
-
-- (void)checkEntitlementWithCompletion:(void (^)(BOOL hasLifetime, BOOL hasSubscription, NSDate *expiry, NSDate *signedDate, NSError *error))completion {
-    if (completion) {
-        completion(YES, YES, [NSDate distantFuture], [NSDate date], nil);
-    }
+- (NSUUID *)identifierForVendor {
+    return [NSUUID UUID];
 }
+
+%end
+
+%hook NSUUID
+
++ (NSUUID *)UUID {
+    return %orig;
+}
+
+%end
+
+%ctor {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        [NDFloatingView show];
+    });
+}}
 
 - (void)syncAndCheckEntitlementWithCompletion:(void (^)(BOOL hasLifetime, BOOL hasSubscription, NSDate *expiry, NSDate *signedDate, NSError *error))completion {
     if (completion) {
