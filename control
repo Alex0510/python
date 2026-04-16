@@ -1,9 +1,10 @@
-Package: com.allclean.pro
-Name: AllClean Pro
-Depends: mobilesubstrate
-Version: 1.0
+Package: com.yourcompany.sandboxcleaner
+Name: SandboxCleaner
+Version: 1.0.0
 Architecture: iphoneos-arm
-Description: Privacy reset & debug tool
-Maintainer: You
-Author: You
+Description: 一键清理App沙盒、Keychain、Cookie等数据的悬浮窗工具
+Maintainer: Your Name <your@email.com>
+Author: Your Name
 Section: Tweaks
+Depends: firmware (>= 11.0), mobilesubstrate
+Priority: optional
