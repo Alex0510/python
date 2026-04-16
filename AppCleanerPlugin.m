@@ -350,23 +350,41 @@
     });
 }
 
+// 修复：兼容 iOS 11+ 的 getKeyWindow 方法
 - (UIWindow *)getKeyWindow {
+    // iOS 13+ 兼容方法
     if (@available(iOS 13.0, *)) {
+        UIWindowScene *activeScene = nil;
         for (UIWindowScene *scene in [UIApplication sharedApplication].connectedScenes) {
             if (scene.activationState == UISceneActivationStateForegroundActive) {
-                for (UIWindow *window in scene.windows) {
-                    if (window.isKeyWindow) return window;
-                }
+                activeScene = scene;
+                break;
             }
         }
+        if (activeScene) {
+            for (UIWindow *window in activeScene.windows) {
+                if (window.isKeyWindow) {
+                    return window;
+                }
+            }
+            // 如果没有keyWindow，返回第一个window
+            return activeScene.windows.firstObject;
+        }
     }
+    
+    // iOS 12 及以下
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wdeprecated-declarations"
     return [UIApplication sharedApplication].keyWindow;
+    #pragma clang diagnostic pop
 }
 
 - (UIViewController *)getRootViewController {
     UIWindow *window = [self getKeyWindow];
     UIViewController *rootVC = window.rootViewController;
-    while (rootVC.presentedViewController) rootVC = rootVC.presentedViewController;
+    while (rootVC.presentedViewController) {
+        rootVC = rootVC.presentedViewController;
+    }
     return rootVC;
 }
 
