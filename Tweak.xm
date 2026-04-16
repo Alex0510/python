@@ -105,7 +105,7 @@ static void ClearKeychainData(NSString *bundleIdentifier);
 
         // 创建显示"冬"字的标签
         self.winterLabel = [[UILabel alloc] initWithFrame:self.bounds];
-        self.winterLabel.text = @"clean";
+        self.winterLabel.text = @"白";
         self.winterLabel.textAlignment = NSTextAlignmentCenter;
         self.winterLabel.textColor = [UIColor whiteColor];
         self.winterLabel.font = [UIFont boldSystemFontOfSize:20];
