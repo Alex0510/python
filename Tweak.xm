@@ -15,6 +15,8 @@ static void ClearKeychainData(NSString *bundleIdentifier);
 @property (nonatomic, assign) long long bytesFreed;
 @property (nonatomic, strong) NSDate *lastCleaningDate;
 @property (nonatomic, assign) NSTimeInterval cleaningDuration;
+@property (nonatomic, strong) NSMutableArray<NSString *> *deletedFilesLog;  // 新增：删除文件日志
+@property (nonatomic, strong) NSMutableArray<NSString *> *deletedDirectoriesLog;  // 新增：删除目录日志
 @end
 
 // 增强版悬浮窗类
@@ -24,6 +26,7 @@ static void ClearKeychainData(NSString *bundleIdentifier);
 @property (nonatomic, strong) UIView *progressOverlay;
 @property (nonatomic, strong) UIProgressView *progressView;
 @property (nonatomic, strong) UILabel *statusLabel;
+@property (nonatomic, strong) UITextView *logTextView;  // 新增：日志显示视图
 
 // 高优先级功能方法
 - (void)showCleaningOptions;
@@ -32,6 +35,7 @@ static void ClearKeychainData(NSString *bundleIdentifier);
 - (void)updateProgress:(float)progress withStatus:(NSString *)status;
 - (void)hideProgressIndicator;
 - (void)showCleaningResults:(CleaningStats *)stats;
+- (void)showDetailedLog:(CleaningStats *)stats;  // 新增：显示详细日志
 
 // 清理功能方法
 - (void)clearCacheOnly;
@@ -59,8 +63,59 @@ static void ClearKeychainData(NSString *bundleIdentifier);
         self.bytesFreed = 0;
         self.lastCleaningDate = [NSDate date];
         self.cleaningDuration = 0.0;
+        self.deletedFilesLog = [NSMutableArray array];
+        self.deletedDirectoriesLog = [NSMutableArray array];
     }
     return self;
+}
+
+- (NSString *)generateDetailedLog {
+    NSMutableString *log = [NSMutableString string];
+    
+    [log appendString:@"╔═══════════════════════════════════════════════════════════╗\n"];
+    [log appendString:@"║                    📋 详细清理日志                        ║\n"];
+    [log appendString:@"╚═══════════════════════════════════════════════════════════╝\n\n"];
+    
+    [log appendFormat:@"📅 清理时间: %@\n", self.lastCleaningDate];
+    [log appendFormat:@"⏱ 耗时: %.2f 秒\n", self.cleaningDuration];
+    [log appendFormat:@"📁 删除文件总数: %lu 个\n", (unsigned long)self.filesDeleted];
+    [log appendFormat:@"💾 释放空间总计: %.2f MB (%.2f KB)\n\n", 
+     self.bytesFreed / (1024.0 * 1024.0),
+     self.bytesFreed / 1024.0];
+    
+    // 记录删除的目录
+    if (self.deletedDirectoriesLog.count > 0) {
+        [log appendString:@"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"];
+        [log appendString:@"🗂 清理的目录:\n"];
+        [log appendString:@"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"];
+        for (NSString *dir in self.deletedDirectoriesLog) {
+            [log appendFormat:@"  • %@\n", dir];
+        }
+        [log appendString:@"\n"];
+    }
+    
+    // 记录删除的文件（最多显示前100个，避免过长）
+    if (self.deletedFilesLog.count > 0) {
+        [log appendString:@"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"];
+        [log appendFormat:@"📄 删除的文件 (共 %lu 个):\n", (unsigned long)self.deletedFilesLog.count];
+        [log appendString:@"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"];
+        
+        NSUInteger maxDisplay = MIN(self.deletedFilesLog.count, 100);
+        for (NSUInteger i = 0; i < maxDisplay; i++) {
+            [log appendFormat:@"  %lu. %@\n", (unsigned long)(i + 1), self.deletedFilesLog[i]];
+        }
+        
+        if (self.deletedFilesLog.count > 100) {
+            [log appendFormat:@"\n  ... 还有 %lu 个文件未显示\n", 
+             (unsigned long)(self.deletedFilesLog.count - 100)];
+        }
+        [log appendString:@"\n"];
+    }
+    
+    [log appendString:@"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"];
+    [log appendString:@"✅ 清理完成！\n"];
+    
+    return log;
 }
 
 @end
@@ -105,7 +160,7 @@ static void ClearKeychainData(NSString *bundleIdentifier);
 
         // 创建显示"冬"字的标签
         self.winterLabel = [[UILabel alloc] initWithFrame:self.bounds];
-        self.winterLabel.text = @"白";
+        self.winterLabel.text = @"冬";
         self.winterLabel.textAlignment = NSTextAlignmentCenter;
         self.winterLabel.textColor = [UIColor whiteColor];
         self.winterLabel.font = [UIFont boldSystemFontOfSize:20];
@@ -152,7 +207,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
 // 获取主窗口的辅助方法 - 修复 iOS 13+ 兼容性
 - (UIWindow *)getKeyWindow {
     if (@available(iOS 13.0, *)) {
-        // iOS 13+ 使用 connectedScenes API
         NSSet *connectedScenes = [UIApplication sharedApplication].connectedScenes;
         for (UIWindowScene *windowScene in connectedScenes) {
             if (windowScene.activationState == UISceneActivationStateForegroundActive) {
@@ -161,13 +215,11 @@ static void ClearKeychainData(NSString *bundleIdentifier);
                         return window;
                     }
                 }
-                // 如果没有找到 keyWindow，返回该场景的第一个窗口
                 if (windowScene.windows.count > 0) {
                     return windowScene.windows.firstObject;
                 }
             }
         }
-        // 备用：返回任意可见窗口
         for (UIWindowScene *windowScene in connectedScenes) {
             for (UIWindow *window in windowScene.windows) {
                 if (!window.hidden && window.alpha > 0) {
@@ -177,7 +229,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
         }
     } 
     
-    // iOS 13 以下使用旧方法
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Wdeprecated-declarations"
     return [UIApplication sharedApplication].keyWindow;
@@ -186,7 +237,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
 
 // 查找合适的视图控制器来显示弹窗
 - (UIViewController *)findPresentingViewController {
-    // 方法1：尝试获取主窗口的根视图控制器
     UIWindow *keyWindow = [self getKeyWindow];
     if (keyWindow && keyWindow.rootViewController) {
         UIViewController *rootVC = keyWindow.rootViewController;
@@ -197,7 +247,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
         }
     }
     
-    // 方法2：遍历所有窗口寻找合适的视图控制器
     if (@available(iOS 13.0, *)) {
         NSSet *connectedScenes = [UIApplication sharedApplication].connectedScenes;
         for (UIWindowScene *windowScene in connectedScenes) {
@@ -290,7 +339,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
         DebugLog(@"用户取消操作");
     }]];
     
-    // iPad适配
     if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) {
         optionsAlert.popoverPresentationController.sourceView = presentingVC.view;
         optionsAlert.popoverPresentationController.sourceRect = CGRectMake(presentingVC.view.bounds.size.width/2, presentingVC.view.bounds.size.height/2, 1, 1);
@@ -343,7 +391,7 @@ static void ClearKeychainData(NSString *bundleIdentifier);
     self.progressOverlay.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.7];
     self.progressOverlay.alpha = 0.0;
     
-    UIView *containerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 280, 120)];
+    UIView *containerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 280, 150)];
     containerView.center = self.progressOverlay.center;
     containerView.backgroundColor = [UIColor colorWithWhite:0.1 alpha:0.9];
     containerView.layer.cornerRadius = 15;
@@ -415,7 +463,7 @@ static void ClearKeychainData(NSString *bundleIdentifier);
     }
 }
 
-// 显示清理结果
+// 显示清理结果（增强版，包含查看详细日志选项）
 - (void)showCleaningResults:(CleaningStats *)stats {
     UIWindow *keyWindow = [self getKeyWindow];
     if (!keyWindow || !keyWindow.rootViewController) {
@@ -423,10 +471,11 @@ static void ClearKeychainData(NSString *bundleIdentifier);
                 (unsigned long)stats.filesDeleted,
                 stats.bytesFreed / (1024.0 * 1024.0),
                 stats.cleaningDuration);
+        [self showDetailedLog:stats];
         return;
     }
     
-    NSString *message = [NSString stringWithFormat:@"清理完成！\n\n📁 删除文件：%lu 个\n💾 释放空间：%.2f MB\n⏱ 耗时：%.1f 秒\n\n应用将在3秒后退出",
+    NSString *message = [NSString stringWithFormat:@"清理完成！\n\n📁 删除文件：%lu 个\n💾 释放空间：%.2f MB\n⏱ 耗时：%.1f 秒",
                         (unsigned long)stats.filesDeleted,
                         stats.bytesFreed / (1024.0 * 1024.0),
                         stats.cleaningDuration];
@@ -435,18 +484,88 @@ static void ClearKeychainData(NSString *bundleIdentifier);
                                                                          message:message
                                                                   preferredStyle:UIAlertControllerStyleAlert];
     
-    [resultAlert addAction:[UIAlertAction actionWithTitle:@"立即退出" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+    [resultAlert addAction:[UIAlertAction actionWithTitle:@"📋 查看详细日志" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        [self showDetailedLog:stats];
+    }]];
+    
+    [resultAlert addAction:[UIAlertAction actionWithTitle:@"立即退出" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
         exit(0);
     }]];
     
     [keyWindow.rootViewController presentViewController:resultAlert animated:YES completion:^{
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             exit(0);
         });
     }];
 }
 
-// 仅清理缓存
+// 新增：显示详细日志
+- (void)showDetailedLog:(CleaningStats *)stats {
+    UIViewController *presentingVC = [self findPresentingViewController];
+    if (!presentingVC) {
+        DebugLog(@"无法显示详细日志：没有视图控制器");
+        return;
+    }
+    
+    NSString *detailedLog = [stats generateDetailedLog];
+    
+    // 创建滚动视图控制器来显示日志
+    UIViewController *logVC = [[UIViewController alloc] init];
+    logVC.view.backgroundColor = [UIColor colorWithWhite:0.95 alpha:1.0];
+    logVC.title = @"清理详细日志";
+    
+    UITextView *textView = [[UITextView alloc] initWithFrame:logVC.view.bounds];
+    textView.text = detailedLog;
+    textView.font = [UIFont fontWithName:@"Courier" size:12];
+    textView.editable = NO;
+    textView.backgroundColor = [UIColor colorWithWhite:0.95 alpha:1.0];
+    textView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [logVC.view addSubview:textView];
+    
+    UINavigationController *navController = [[UINavigationController alloc] initWithRootViewController:logVC];
+    
+    // 添加关闭按钮
+    logVC.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone 
+                                                                                           target:self 
+                                                                                           action:@selector(dismissLogVC:)];
+    logVC.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"分享" 
+                                                                              style:UIBarButtonItemStylePlain 
+                                                                             target:self 
+                                                                             action:@selector(shareLog:)];
+    
+    // 保存 stats 供分享使用
+    objc_setAssociatedObject(logVC, "cleaningStats", stats, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    
+    [presentingVC presentViewController:navController animated:YES completion:nil];
+}
+
+- (void)dismissLogVC:(id)sender {
+    UIViewController *presentingVC = [self findPresentingViewController];
+    [presentingVC dismissViewControllerAnimated:YES completion:nil];
+}
+
+- (void)shareLog:(id)sender {
+    UIViewController *logVC = nil;
+    if ([sender isKindOfClass:[UIBarButtonItem class]]) {
+        logVC = (UIViewController *)[(UIBarButtonItem *)sender target];
+    }
+    
+    CleaningStats *stats = objc_getAssociatedObject(logVC, "cleaningStats");
+    if (stats) {
+        NSString *logContent = [stats generateDetailedLog];
+        UIActivityViewController *activityVC = [[UIActivityViewController alloc] initWithActivityItems:@[logContent] applicationActivities:nil];
+        
+        UIViewController *presentingVC = [self findPresentingViewController];
+        if (presentingVC) {
+            if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) {
+                activityVC.popoverPresentationController.barButtonItem = (UIBarButtonItem *)sender;
+            }
+            [presentingVC presentViewController:activityVC animated:YES completion:nil];
+        }
+    }
+}
+
+// 仅清理缓存（带日志）
 - (void)clearCacheOnly {
     [self showProgressIndicator];
     
@@ -458,6 +577,8 @@ static void ClearKeychainData(NSString *bundleIdentifier);
         [self updateProgress:0.1 withStatus:@"正在清理缓存目录..."];
         
         NSString *cachesDirectory = [NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES) firstObject];
+        [stats.deletedDirectoriesLog addObject:cachesDirectory];
+        
         NSArray *cacheFiles = [fileManager contentsOfDirectoryAtPath:cachesDirectory error:nil];
         
         [self updateProgress:0.3 withStatus:@"正在删除缓存文件..."];
@@ -466,8 +587,11 @@ static void ClearKeychainData(NSString *bundleIdentifier);
             NSString *filePath = [cachesDirectory stringByAppendingPathComponent:file];
             NSDictionary *attributes = [fileManager attributesOfItemAtPath:filePath error:nil];
             if (attributes) {
-                stats.bytesFreed += [attributes fileSize];
+                long long fileSize = [attributes fileSize];
+                stats.bytesFreed += fileSize;
                 stats.filesDeleted++;
+                [stats.deletedFilesLog addObject:[NSString stringWithFormat:@"[缓存] %@ (%.2f KB)", file, fileSize / 1024.0]];
+                DebugLog(@"删除缓存文件: %@ (%.2f KB)", file, fileSize / 1024.0);
             }
             [fileManager removeItemAtPath:filePath error:nil];
         }
@@ -475,20 +599,26 @@ static void ClearKeychainData(NSString *bundleIdentifier);
         [self updateProgress:0.6 withStatus:@"正在清理临时文件..."];
         
         NSString *tempDirectory = NSTemporaryDirectory();
+        [stats.deletedDirectoriesLog addObject:tempDirectory];
+        
         NSArray *tempFiles = [fileManager contentsOfDirectoryAtPath:tempDirectory error:nil];
         
         for (NSString *file in tempFiles) {
             NSString *filePath = [tempDirectory stringByAppendingPathComponent:file];
             NSDictionary *attributes = [fileManager attributesOfItemAtPath:filePath error:nil];
             if (attributes) {
-                stats.bytesFreed += [attributes fileSize];
+                long long fileSize = [attributes fileSize];
+                stats.bytesFreed += fileSize;
                 stats.filesDeleted++;
+                [stats.deletedFilesLog addObject:[NSString stringWithFormat:@"[临时] %@ (%.2f KB)", file, fileSize / 1024.0]];
+                DebugLog(@"删除临时文件: %@ (%.2f KB)", file, fileSize / 1024.0);
             }
             [fileManager removeItemAtPath:filePath error:nil];
         }
         
         [self updateProgress:0.9 withStatus:@"正在清理网络缓存..."];
         [[NSURLCache sharedURLCache] removeAllCachedResponses];
+        [stats.deletedFilesLog addObject:@"[网络] 清除所有URLCache"];
         
         [self updateProgress:1.0 withStatus:@"缓存清理完成！"];
         stats.cleaningDuration = [[NSDate date] timeIntervalSinceDate:startTime];
@@ -496,16 +626,11 @@ static void ClearKeychainData(NSString *bundleIdentifier);
         dispatch_async(dispatch_get_main_queue(), ^{
             [self hideProgressIndicator];
             [self showCleaningResults:stats];
-            
-            // 延迟2秒后自动退出应用
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                [self exitApplication];
-            });
         });
     });
 }
 
-// 仅清理用户数据
+// 仅清理用户数据（带日志）
 - (void)clearUserDataOnly {
     [self showProgressIndicator];
     
@@ -519,18 +644,24 @@ static void ClearKeychainData(NSString *bundleIdentifier);
         
         [[NSUserDefaults standardUserDefaults] removePersistentDomainForName:bundleIdentifier];
         [[NSUserDefaults standardUserDefaults] synchronize];
+        [stats.deletedFilesLog addObject:@"[设置] 清除 NSUserDefaults"];
         
         [self updateProgress:0.4 withStatus:@"正在清理用户文档..."];
         
         NSString *documentsDirectory = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
+        [stats.deletedDirectoriesLog addObject:documentsDirectory];
+        
         NSArray *docFiles = [fileManager contentsOfDirectoryAtPath:documentsDirectory error:nil];
         
         for (NSString *file in docFiles) {
             NSString *filePath = [documentsDirectory stringByAppendingPathComponent:file];
             NSDictionary *attributes = [fileManager attributesOfItemAtPath:filePath error:nil];
             if (attributes) {
-                stats.bytesFreed += [attributes fileSize];
+                long long fileSize = [attributes fileSize];
+                stats.bytesFreed += fileSize;
                 stats.filesDeleted++;
+                [stats.deletedFilesLog addObject:[NSString stringWithFormat:@"[文档] %@ (%.2f KB)", file, fileSize / 1024.0]];
+                DebugLog(@"删除文档: %@ (%.2f KB)", file, fileSize / 1024.0);
             }
             [fileManager removeItemAtPath:filePath error:nil];
         }
@@ -545,8 +676,11 @@ static void ClearKeychainData(NSString *bundleIdentifier);
                 NSString *filePath = [preferencesPath stringByAppendingPathComponent:file];
                 NSDictionary *attributes = [fileManager attributesOfItemAtPath:filePath error:nil];
                 if (attributes) {
-                    stats.bytesFreed += [attributes fileSize];
+                    long long fileSize = [attributes fileSize];
+                    stats.bytesFreed += fileSize;
                     stats.filesDeleted++;
+                    [stats.deletedFilesLog addObject:[NSString stringWithFormat:@"[偏好] %@ (%.2f KB)", file, fileSize / 1024.0]];
+                    DebugLog(@"删除偏好文件: %@ (%.2f KB)", file, fileSize / 1024.0);
                 }
                 [fileManager removeItemAtPath:filePath error:nil];
             }
@@ -558,11 +692,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
         dispatch_async(dispatch_get_main_queue(), ^{
             [self hideProgressIndicator];
             [self showCleaningResults:stats];
-            
-            // 延迟2秒后自动退出应用
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                [self exitApplication];
-            });
         });
     });
 }
@@ -586,7 +715,7 @@ static void ClearKeychainData(NSString *bundleIdentifier);
     }];
 }
 
-// 带进度的完全清理
+// 带进度的完全清理（增强日志）
 - (void)clearAppDataWithProgress {
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         CleaningStats *stats = [[CleaningStats alloc] init];
@@ -603,6 +732,7 @@ static void ClearKeychainData(NSString *bundleIdentifier);
         
         [[NSUserDefaults standardUserDefaults] removePersistentDomainForName:bundleIdentifier];
         [[NSUserDefaults standardUserDefaults] synchronize];
+        [stats.deletedFilesLog addObject:@"[设置] 清除 NSUserDefaults"];
         
         [self updateProgress:0.2 withStatus:@"正在清理文档目录..."];
         
@@ -620,13 +750,22 @@ static void ClearKeychainData(NSString *bundleIdentifier);
             NSString *dirName = [directory lastPathComponent];
             [self updateProgress:currentProgress withStatus:[NSString stringWithFormat:@"正在清理 %@ 目录...", dirName]];
             
+            [stats.deletedDirectoriesLog addObject:directory];
+            
             NSArray *files = [fileManager contentsOfDirectoryAtPath:directory error:nil];
             for (NSString *file in files) {
                 NSString *filePath = [directory stringByAppendingPathComponent:file];
                 NSDictionary *attributes = [fileManager attributesOfItemAtPath:filePath error:nil];
                 if (attributes) {
-                    stats.bytesFreed += [attributes fileSize];
+                    BOOL isDirectory = [[attributes fileType] isEqualToString:NSFileTypeDirectory];
+                    long long fileSize = [attributes fileSize];
+                    stats.bytesFreed += fileSize;
                     stats.filesDeleted++;
+                    
+                    NSString *fileType = isDirectory ? @"[目录]" : @"[文件]";
+                    [stats.deletedFilesLog addObject:[NSString stringWithFormat:@"%@ %@/%@ (%.2f KB)", 
+                                                      fileType, dirName, file, fileSize / 1024.0]];
+                    DebugLog(@"删除: %@/%@ (%.2f KB)", dirName, file, fileSize / 1024.0);
                 }
                 [fileManager removeItemAtPath:filePath error:nil];
             }
@@ -636,6 +775,7 @@ static void ClearKeychainData(NSString *bundleIdentifier);
         
         [self updateProgress:0.8 withStatus:@"正在清理Keychain数据..."];
         ClearKeychainData(bundleIdentifier);
+        [stats.deletedFilesLog addObject:@"[Keychain] 清除所有钥匙串数据"];
         
         [self updateProgress:0.9 withStatus:@"正在执行延迟清除..."];
         
@@ -655,8 +795,7 @@ static void ClearKeychainData(NSString *bundleIdentifier);
                 [self hideProgressIndicator];
                 [self showCleaningResults:stats];
                 
-                // 延迟2秒后自动退出应用
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                     [self exitApplication];
                 });
             });
@@ -668,14 +807,12 @@ static void ClearKeychainData(NSString *bundleIdentifier);
 - (void)exitApplication {
     DebugLog(@"准备退出应用");
     
-    // 隐藏悬浮窗
     [UIView animateWithDuration:0.3 animations:^{
         self.alpha = 0.0;
         self.transform = CGAffineTransformMakeScale(0.1, 0.1);
     } completion:^(BOOL finished) {
         self.hidden = YES;
         
-        // 延迟0.5秒后退出应用
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             DebugLog(@"应用即将退出");
             exit(0);
@@ -725,7 +862,6 @@ static void CreateEnhancedFloatingWindow() {
     NSString *bundleIdentifier = [[NSBundle mainBundle] bundleIdentifier];
     DebugLog(@"尝试创建增强版悬浮窗，应用: %@", bundleIdentifier);
     
-    // 检查是否为系统应用，跳过系统应用
     if ([bundleIdentifier hasPrefix:@"com.apple."]) {
         DebugLog(@"跳过系统应用: %@", bundleIdentifier);
         return;
@@ -741,7 +877,6 @@ static void CreateEnhancedFloatingWindow() {
         return;
     }
     
-    // 确保在主线程中创建
     if (![NSThread isMainThread]) {
         dispatch_async(dispatch_get_main_queue(), ^{
             CreateEnhancedFloatingWindow();
@@ -752,18 +887,15 @@ static void CreateEnhancedFloatingWindow() {
     @try {
         enhancedFloatingWindow = [[EnhancedFloatingWindow alloc] init];
         if (enhancedFloatingWindow) {
-            // 设置更高的窗口级别确保显示在最前面
             enhancedFloatingWindow.windowLevel = UIWindowLevelAlert + 100;
             enhancedFloatingWindow.hidden = NO;
             [enhancedFloatingWindow makeKeyAndVisible];
             
-            // 强制刷新显示
             [enhancedFloatingWindow setNeedsDisplay];
             [enhancedFloatingWindow layoutIfNeeded];
             
             DebugLog(@"增强版悬浮窗创建并显示成功，窗口级别: %.0f", enhancedFloatingWindow.windowLevel);
             
-            // 验证窗口是否真的可见
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 if (enhancedFloatingWindow && !enhancedFloatingWindow.hidden) {
                     DebugLog(@"悬浮窗显示验证成功");
@@ -822,7 +954,7 @@ static void CreateEnhancedFloatingWindow() {
 
 %end
 
-// Hook UIWindow 来确保在窗口显示时创建悬浮窗
+// Hook UIWindow
 %hook UIWindow
 
 - (void)makeKeyAndVisible {
@@ -839,7 +971,7 @@ static void CreateEnhancedFloatingWindow() {
 
 %end
 
-// Hook UIViewController 来在视图控制器加载时创建悬浮窗
+// Hook UIViewController
 %hook UIViewController
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -856,7 +988,7 @@ static void CreateEnhancedFloatingWindow() {
 
 %end
 
-// 构造函数，在库加载时立即尝试创建悬浮窗
+// 构造函数
 %ctor {
     DebugLog(@"AppCleaner库已加载");
     
