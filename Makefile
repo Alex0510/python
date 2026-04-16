@@ -1,4 +1,4 @@
-export THEOS=/opt/theos
+
 PACKAGE_NAME = allclean
 TARGET = iphone:clang:latest:11.0
 INSTALL_TARGET_PROCESSES = SpringBoard
