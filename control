@@ -1,8 +1,8 @@
-Package: com.yourcompany.sandboxcleaner
-Name: SandboxCleaner
+Package: com.yourcompany.appcleaner
+Name: AppCleaner
 Version: 1.0.0
 Architecture: iphoneos-arm
-Description: 一键清理App沙盒、Keychain、Cookie等数据的悬浮窗工具
+Description: 注入到App内部，一键清除当前App的沙盒、Keychain、Cookie等数据
 Maintainer: Your Name <your@email.com>
 Author: Your Name
 Section: Tweaks
