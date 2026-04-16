@@ -1,10 +1,25 @@
+//
+//  SandboxCleanerPlugin.h
+//  SandboxCleanerPlugin
+//
+//  Created on 2026-04-16.
+//
+
 #import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 
-@interface ACManager : NSObject
+NS_ASSUME_NONNULL_BEGIN
 
-+ (instancetype)shared;
+@interface SandboxCleanerPlugin : NSObject
 
-- (void)runFullClean;
-- (NSString *)currentBundle;
++ (instancetype)sharedPlugin;
+
+/// 显示悬浮清理按钮
+- (void)showFloatingButton;
+
+/// 隐藏悬浮清理按钮
+- (void)hideFloatingButton;
 
 @end
+
+NS_ASSUME_NONNULL_END
