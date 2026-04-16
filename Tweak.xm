@@ -44,6 +44,9 @@ static void ClearKeychainData(NSString *bundleIdentifier);
 - (void)handleTap:(UITapGestureRecognizer *)gesture;
 - (void)handlePan:(UIPanGestureRecognizer *)gesture;
 - (void)startPulseAnimation;
+- (UIWindow *)getKeyWindow;
+- (UIViewController *)findPresentingViewController;
+- (UIViewController *)findTopViewController:(UIViewController *)baseViewController;
 @end
 
 // 清理统计信息类实现
@@ -146,6 +149,113 @@ static void ClearKeychainData(NSString *bundleIdentifier);
     [gesture setTranslation:CGPointZero inView:self];
 }
 
+// 获取主窗口的辅助方法 - 修复 iOS 13+ 兼容性
+- (UIWindow *)getKeyWindow {
+    if (@available(iOS 13.0, *)) {
+        // iOS 13+ 使用 connectedScenes API
+        NSSet *connectedScenes = [UIApplication sharedApplication].connectedScenes;
+        for (UIWindowScene *windowScene in connectedScenes) {
+            if (windowScene.activationState == UISceneActivationStateForegroundActive) {
+                for (UIWindow *window in windowScene.windows) {
+                    if (window.isKeyWindow) {
+                        return window;
+                    }
+                }
+                // 如果没有找到 keyWindow，返回该场景的第一个窗口
+                if (windowScene.windows.count > 0) {
+                    return windowScene.windows.firstObject;
+                }
+            }
+        }
+        // 备用：返回任意可见窗口
+        for (UIWindowScene *windowScene in connectedScenes) {
+            for (UIWindow *window in windowScene.windows) {
+                if (!window.hidden && window.alpha > 0) {
+                    return window;
+                }
+            }
+        }
+    } 
+    
+    // iOS 13 以下使用旧方法
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    return [UIApplication sharedApplication].keyWindow;
+    #pragma clang diagnostic pop
+}
+
+// 查找合适的视图控制器来显示弹窗
+- (UIViewController *)findPresentingViewController {
+    // 方法1：尝试获取主窗口的根视图控制器
+    UIWindow *keyWindow = [self getKeyWindow];
+    if (keyWindow && keyWindow.rootViewController) {
+        UIViewController *rootVC = keyWindow.rootViewController;
+        UIViewController *presentedVC = [self findTopViewController:rootVC];
+        if (presentedVC) {
+            DebugLog(@"找到合适的视图控制器: %@", NSStringFromClass([presentedVC class]));
+            return presentedVC;
+        }
+    }
+    
+    // 方法2：遍历所有窗口寻找合适的视图控制器
+    if (@available(iOS 13.0, *)) {
+        NSSet *connectedScenes = [UIApplication sharedApplication].connectedScenes;
+        for (UIWindowScene *windowScene in connectedScenes) {
+            if (windowScene.activationState == UISceneActivationStateForegroundActive) {
+                for (UIWindow *window in windowScene.windows) {
+                    if (window.rootViewController && window != self) {
+                        UIViewController *topVC = [self findTopViewController:window.rootViewController];
+                        if (topVC) {
+                            DebugLog(@"从窗口场景找到视图控制器: %@", NSStringFromClass([topVC class]));
+                            return topVC;
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        NSArray *windows = [UIApplication sharedApplication].windows;
+        #pragma clang diagnostic pop
+        for (UIWindow *window in windows) {
+            if (window.rootViewController && window != self) {
+                UIViewController *topVC = [self findTopViewController:window.rootViewController];
+                if (topVC) {
+                    DebugLog(@"从应用窗口找到视图控制器: %@", NSStringFromClass([topVC class]));
+                    return topVC;
+                }
+            }
+        }
+    }
+    
+    DebugLog(@"无法找到合适的视图控制器");
+    return nil;
+}
+
+// 递归查找最顶层的视图控制器
+- (UIViewController *)findTopViewController:(UIViewController *)baseViewController {
+    if (!baseViewController) {
+        return nil;
+    }
+    
+    if (baseViewController.presentedViewController) {
+        return [self findTopViewController:baseViewController.presentedViewController];
+    }
+    
+    if ([baseViewController isKindOfClass:[UINavigationController class]]) {
+        UINavigationController *navController = (UINavigationController *)baseViewController;
+        return [self findTopViewController:navController.visibleViewController];
+    }
+    
+    if ([baseViewController isKindOfClass:[UITabBarController class]]) {
+        UITabBarController *tabController = (UITabBarController *)baseViewController;
+        return [self findTopViewController:tabController.selectedViewController];
+    }
+    
+    return baseViewController;
+}
+
 // 显示清理选项菜单
 - (void)showCleaningOptions {
     DebugLog(@"开始显示清理选项菜单");
@@ -157,7 +267,7 @@ static void ClearKeychainData(NSString *bundleIdentifier);
         return;
     }
     
-    UIAlertController *optionsAlert = [UIAlertController alertControllerWithTitle:@"AllClean - 数据清理"
+    UIAlertController *optionsAlert = [UIAlertController alertControllerWithTitle:@"AppCleaner - 数据清理"
                                                                           message:@"请选择清理类型"
                                                                    preferredStyle:UIAlertControllerStyleActionSheet];
     
@@ -223,94 +333,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
     }];
 }
 
-// 获取主窗口的辅助方法
-- (UIWindow *)getKeyWindow {
-    if (@available(iOS 13.0, *)) {
-        NSSet *connectedScenes = [UIApplication sharedApplication].connectedScenes;
-        for (UIWindowScene *windowScene in connectedScenes) {
-            if (windowScene.activationState == UISceneActivationStateForegroundActive) {
-                for (UIWindow *window in windowScene.windows) {
-                    if (window.isKeyWindow) {
-                        return window;
-                    }
-                }
-            }
-        }
-    } else {
-        return [UIApplication sharedApplication].keyWindow;
-    }
-    return nil;
-}
-
-// 查找合适的视图控制器来显示弹窗
-- (UIViewController *)findPresentingViewController {
-    // 方法1：尝试获取主窗口的根视图控制器
-    UIWindow *keyWindow = [self getKeyWindow];
-    if (keyWindow && keyWindow.rootViewController) {
-        UIViewController *rootVC = keyWindow.rootViewController;
-        UIViewController *presentedVC = [self findTopViewController:rootVC];
-        if (presentedVC) {
-            DebugLog(@"找到合适的视图控制器: %@", NSStringFromClass([presentedVC class]));
-            return presentedVC;
-        }
-    }
-    
-    // 方法2：遍历所有窗口寻找合适的视图控制器
-    if (@available(iOS 13.0, *)) {
-        NSSet *connectedScenes = [UIApplication sharedApplication].connectedScenes;
-        for (UIWindowScene *windowScene in connectedScenes) {
-            if (windowScene.activationState == UISceneActivationStateForegroundActive) {
-                for (UIWindow *window in windowScene.windows) {
-                    if (window.rootViewController && window != self) {
-                        UIViewController *topVC = [self findTopViewController:window.rootViewController];
-                        if (topVC) {
-                            DebugLog(@"从窗口场景找到视图控制器: %@", NSStringFromClass([topVC class]));
-                            return topVC;
-                        }
-                    }
-                }
-            }
-        }
-    } else {
-        NSArray *windows = [UIApplication sharedApplication].windows;
-        for (UIWindow *window in windows) {
-            if (window.rootViewController && window != self) {
-                UIViewController *topVC = [self findTopViewController:window.rootViewController];
-                if (topVC) {
-                    DebugLog(@"从应用窗口找到视图控制器: %@", NSStringFromClass([topVC class]));
-                    return topVC;
-                }
-            }
-        }
-    }
-    
-    DebugLog(@"无法找到合适的视图控制器");
-    return nil;
-}
-
-// 递归查找最顶层的视图控制器
-- (UIViewController *)findTopViewController:(UIViewController *)baseViewController {
-    if (!baseViewController) {
-        return nil;
-    }
-    
-    if (baseViewController.presentedViewController) {
-        return [self findTopViewController:baseViewController.presentedViewController];
-    }
-    
-    if ([baseViewController isKindOfClass:[UINavigationController class]]) {
-        UINavigationController *navController = (UINavigationController *)baseViewController;
-        return [self findTopViewController:navController.visibleViewController];
-    }
-    
-    if ([baseViewController isKindOfClass:[UITabBarController class]]) {
-        UITabBarController *tabController = (UITabBarController *)baseViewController;
-        return [self findTopViewController:tabController.selectedViewController];
-    }
-    
-    return baseViewController;
-}
-
 // 显示进度指示器
 - (void)showProgressIndicator {
     if (self.progressOverlay) {
@@ -328,7 +350,7 @@ static void ClearKeychainData(NSString *bundleIdentifier);
     containerView.layer.masksToBounds = YES;
     
     UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 15, 240, 25)];
-    titleLabel.text = @"AllClean 正在清理...";
+    titleLabel.text = @"AppCleaner 正在清理...";
     titleLabel.textColor = [UIColor whiteColor];
     titleLabel.font = [UIFont boldSystemFontOfSize:16];
     titleLabel.textAlignment = NSTextAlignmentCenter;
@@ -672,10 +694,10 @@ void DebugLog(NSString *format, ...) {
     va_start(args, format);
     NSString *message = [[NSString alloc] initWithFormat:format arguments:args];
     va_end(args);
-    NSLog(@"🔥AllClean: %@", message);
+    NSLog(@"🔥AppCleaner: %@", message);
 }
 
-// Keychain清理函数（简化版）
+// Keychain清理函数
 static void ClearKeychainData(NSString *bundleIdentifier) {
     DebugLog(@"开始清除Keychain数据");
     
@@ -739,7 +761,7 @@ static void CreateEnhancedFloatingWindow() {
             [enhancedFloatingWindow setNeedsDisplay];
             [enhancedFloatingWindow layoutIfNeeded];
             
-            DebugLog(@"增强版悬浮窗创建并显示成功，窗口级别: %f", enhancedFloatingWindow.windowLevel);
+            DebugLog(@"增强版悬浮窗创建并显示成功，窗口级别: %.0f", enhancedFloatingWindow.windowLevel);
             
             // 验证窗口是否真的可见
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
@@ -836,7 +858,7 @@ static void CreateEnhancedFloatingWindow() {
 
 // 构造函数，在库加载时立即尝试创建悬浮窗
 %ctor {
-    DebugLog(@"AllClean库已加载");
+    DebugLog(@"AppCleaner库已加载");
     
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         DebugLog(@"构造函数延迟创建悬浮窗");
