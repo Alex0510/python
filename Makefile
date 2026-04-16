@@ -5,10 +5,10 @@ INSTALL_TARGET_PROCESSES = SpringBoard
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = allclean
-allclean_FILES = Tweak.x
-allclean_CFLAGS = -fobjc-arc
-allclean_FRAMEWORKS = UIKit Foundation QuartzCore Security
+TWEAK_NAME = AppCleaner
+AppCleaner_FILES = Tweak.x
+AppCleaner_CFLAGS = -fobjc-arc
+AppCleaner_FRAMEWORKS = UIKit Foundation QuartzCore Security
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 
