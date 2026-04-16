@@ -3,12 +3,12 @@
 #import <QuartzCore/QuartzCore.h>
 #import <Security/Security.h>
 #import <os/log.h>
-#import <objc/runtime.h>  // 新增：修复关联对象错误
+#import <objc/runtime.h>
 
 // 函数声明
 void DebugLog(NSString *format, ...);
 static void CreateEnhancedFloatingWindow(void);
-static void ClearKeychainData(NSString *bundleIdentifier);
+static NSDictionary *ClearKeychainData(NSString *bundleIdentifier);  // 改为返回清除结果
 
 // 清理统计信息类
 @interface CleaningStats : NSObject
@@ -18,6 +18,7 @@ static void ClearKeychainData(NSString *bundleIdentifier);
 @property (nonatomic, assign) NSTimeInterval cleaningDuration;
 @property (nonatomic, strong) NSMutableArray<NSString *> *deletedFilesLog;
 @property (nonatomic, strong) NSMutableArray<NSString *> *deletedDirectoriesLog;
+@property (nonatomic, strong) NSMutableArray<NSString *> *keychainLog;  // 新增：Keychain清理日志
 @end
 
 // 增强版悬浮窗类
@@ -60,6 +61,7 @@ static void ClearKeychainData(NSString *bundleIdentifier);
         self.cleaningDuration = 0.0;
         self.deletedFilesLog = [NSMutableArray array];
         self.deletedDirectoriesLog = [NSMutableArray array];
+        self.keychainLog = [NSMutableArray array];
     }
     return self;
 }
@@ -84,6 +86,16 @@ static void ClearKeychainData(NSString *bundleIdentifier);
         [log appendString:@"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"];
         for (NSString *dir in self.deletedDirectoriesLog) {
             [log appendFormat:@"  • %@\n", dir];
+        }
+        [log appendString:@"\n"];
+    }
+    
+    if (self.keychainLog.count > 0) {
+        [log appendString:@"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"];
+        [log appendString:@"🔐 Keychain 清理详情:\n"];
+        [log appendString:@"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"];
+        for (NSString *keychainEntry in self.keychainLog) {
+            [log appendFormat:@"  %@\n", keychainEntry];
         }
         [log appendString:@"\n"];
     }
@@ -456,9 +468,10 @@ static void ClearKeychainData(NSString *bundleIdentifier);
         return;
     }
     
-    NSString *message = [NSString stringWithFormat:@"清理完成！\n\n📁 删除文件：%lu 个\n💾 释放空间：%.2f MB\n⏱ 耗时：%.1f 秒",
+    NSString *message = [NSString stringWithFormat:@"清理完成！\n\n📁 删除文件：%lu 个\n💾 释放空间：%.2f MB\n🔐 Keychain条目：%lu 个\n⏱ 耗时：%.1f 秒",
                         (unsigned long)stats.filesDeleted,
                         stats.bytesFreed / (1024.0 * 1024.0),
+                        (unsigned long)stats.keychainLog.count,
                         stats.cleaningDuration];
     
     UIAlertController *resultAlert = [UIAlertController alertControllerWithTitle:@"✅ 清理完成"
@@ -752,8 +765,9 @@ static void ClearKeychainData(NSString *bundleIdentifier);
         }
         
         [self updateProgress:0.8 withStatus:@"正在清理Keychain数据..."];
-        ClearKeychainData(bundleIdentifier);
-        [stats.deletedFilesLog addObject:@"[Keychain] 清除所有钥匙串数据"];
+        
+        // 调用增强的 Keychain 清理函数，传入 stats 对象记录日志
+        [self clearKeychainDataWithStats:stats bundleIdentifier:bundleIdentifier];
         
         [self updateProgress:0.9 withStatus:@"正在执行延迟清除..."];
         
@@ -779,6 +793,159 @@ static void ClearKeychainData(NSString *bundleIdentifier);
             });
         });
     });
+}
+
+// 新增：带日志记录的 Keychain 清理函数
+- (void)clearKeychainDataWithStats:(CleaningStats *)stats bundleIdentifier:(NSString *)bundleIdentifier {
+    DebugLog(@"开始清除Keychain数据");
+    [stats.keychainLog addObject:@"========== Keychain 清理开始 =========="];
+    [stats.keychainLog addObject:[NSString stringWithFormat:@"应用 Bundle ID: %@", bundleIdentifier]];
+    
+    // 定义 Keychain 类别及其显示名称
+    NSArray *keychainClasses = @[
+        @{@"class": (__bridge id)kSecClassGenericPassword, @"name": @"通用密码 (GenericPassword)"},
+        @{@"class": (__bridge id)kSecClassInternetPassword, @"name": @"互联网密码 (InternetPassword)"},
+        @{@"class": (__bridge id)kSecClassCertificate, @"name": @"证书 (Certificate)"},
+        @{@"class": (__bridge id)kSecClassKey, @"name": @"密钥 (Key)"},
+        @{@"class": (__bridge id)kSecClassIdentity, @"name": @"身份 (Identity)"}
+    ];
+    
+    NSUInteger totalDeletedCount = 0;
+    
+    for (NSDictionary *classInfo in keychainClasses) {
+        id keychainClass = classInfo[@"class"];
+        NSString *className = classInfo[@"name"];
+        
+        // 查询该类别下有多少条目（仅针对当前应用）
+        NSMutableDictionary *query = [[NSMutableDictionary alloc] init];
+        [query setObject:keychainClass forKey:(__bridge id)kSecClass];
+        [query setObject:(__bridge id)kSecMatchLimitAll forKey:(__bridge id)kSecMatchLimit];
+        [query setObject:@YES forKey:(__bridge id)kSecReturnAttributes];
+        [query setObject:(__bridge id)kCFBooleanTrue forKey:(__bridge id)kSecReturnData];
+        
+        // 尝试获取现有条目
+        CFTypeRef result = NULL;
+        OSStatus queryStatus = SecItemCopyMatching((__bridge CFDictionaryRef)query, &result);
+        
+        if (queryStatus == errSecSuccess && result) {
+            NSArray *items = (__bridge_transfer NSArray *)result;
+            NSUInteger itemCount = items.count;
+            
+            if (itemCount > 0) {
+                [stats.keychainLog addObject:[NSString stringWithFormat:@"\n📂 %@ 类别发现 %lu 个条目:", className, (unsigned long)itemCount]];
+                
+                // 记录每个条目的详细信息
+                for (NSDictionary *item in items) {
+                    NSString *itemDescription = [self describeKeychainItem:item];
+                    [stats.keychainLog addObject:[NSString stringWithFormat:@"    • %@", itemDescription]];
+                }
+                
+                // 执行删除
+                NSMutableDictionary *deleteQuery = [[NSMutableDictionary alloc] init];
+                [deleteQuery setObject:keychainClass forKey:(__bridge id)kSecClass];
+                OSStatus deleteStatus = SecItemDelete((__bridge CFDictionaryRef)deleteQuery);
+                
+                if (deleteStatus == errSecSuccess) {
+                    [stats.keychainLog addObject:[NSString stringWithFormat:@"    ✅ 成功删除 %lu 个 %@ 条目", (unsigned long)itemCount, className]];
+                    totalDeletedCount += itemCount;
+                } else {
+                    [stats.keychainLog addObject:[NSString stringWithFormat:@"    ❌ 删除失败，错误码: %d", (int)deleteStatus]];
+                }
+            } else {
+                [stats.keychainLog addObject:[NSString stringWithFormat:@"📂 %@: 无条目", className]];
+            }
+        } else if (queryStatus == errSecItemNotFound) {
+            [stats.keychainLog addObject:[NSString stringWithFormat:@"📂 %@: 无条目", className]];
+        } else {
+            [stats.keychainLog addObject:[NSString stringWithFormat:@"⚠️ %@: 查询失败，错误码: %d", className, (int)queryStatus]];
+        }
+    }
+    
+    // 额外清理：针对当前应用 Bundle ID 的特定 Keychain 条目（更精确的清理）
+    [stats.keychainLog addObject:@"\n========== 精确匹配清理 =========="];
+    
+    NSArray *servicePatterns = @[
+        bundleIdentifier,
+        [NSString stringWithFormat:@"%@.", bundleIdentifier],
+        [NSString stringWithFormat:@"%@_", bundleIdentifier]
+    ];
+    
+    for (NSString *pattern in servicePatterns) {
+        NSMutableDictionary *specificQuery = [[NSMutableDictionary alloc] init];
+        [specificQuery setObject:(__bridge id)kSecClassGenericPassword forKey:(__bridge id)kSecClass];
+        [specificQuery setObject:(__bridge id)kSecMatchLimitAll forKey:(__bridge id)kSecMatchLimit];
+        [specificQuery setObject:@YES forKey:(__bridge id)kSecReturnAttributes];
+        
+        // 尝试匹配服务名
+        [specificQuery setObject:pattern forKey:(__bridge id)kSecAttrService];
+        
+        CFTypeRef specificResult = NULL;
+        OSStatus specificStatus = SecItemCopyMatching((__bridge CFDictionaryRef)specificQuery, &specificResult);
+        
+        if (specificStatus == errSecSuccess && specificResult) {
+            NSArray *items = (__bridge_transfer NSArray *)specificResult;
+            if (items.count > 0) {
+                [stats.keychainLog addObject:[NSString stringWithFormat:@"🔍 匹配模式 '%@' 找到 %lu 个条目:", pattern, (unsigned long)items.count]];
+                
+                for (NSDictionary *item in items) {
+                    NSString *account = [item objectForKey:(__bridge id)kSecAttrAccount] ?: @"未知";
+                    [stats.keychainLog addObject:[NSString stringWithFormat:@"    • 账户: %@", account]];
+                }
+                
+                // 删除这些条目
+                NSMutableDictionary *deleteSpecificQuery = [[NSMutableDictionary alloc] init];
+                [deleteSpecificQuery setObject:(__bridge id)kSecClassGenericPassword forKey:(__bridge id)kSecClass];
+                [deleteSpecificQuery setObject:pattern forKey:(__bridge id)kSecAttrService];
+                OSStatus deleteSpecificStatus = SecItemDelete((__bridge CFDictionaryRef)deleteSpecificQuery);
+                
+                if (deleteSpecificStatus == errSecSuccess) {
+                    [stats.keychainLog addObject:[NSString stringWithFormat:@"    ✅ 成功删除匹配 '%@' 的条目", pattern]];
+                }
+            }
+        }
+    }
+    
+    [stats.keychainLog addObject:[NSString stringWithFormat:@"\n========== Keychain 清理完成 =========="]];
+    [stats.keychainLog addObject:[NSString stringWithFormat:@"总计删除 Keychain 条目: %lu 个", (unsigned long)totalDeletedCount]];
+    
+    DebugLog(@"Keychain清理完成，共删除 %lu 个条目", (unsigned long)totalDeletedCount);
+}
+
+// 辅助方法：描述 Keychain 条目
+- (NSString *)describeKeychainItem:(NSDictionary *)item {
+    NSMutableString *description = [NSMutableString string];
+    
+    NSString *account = [item objectForKey:(__bridge id)kSecAttrAccount];
+    NSString *service = [item objectForKey:(__bridge id)kSecAttrService];
+    NSString *server = [item objectForKey:(__bridge id)kSecAttrServer];
+    NSNumber *port = [item objectForKey:(__bridge id)kSecAttrPort];
+    NSString *protocol = [item objectForKey:(__bridge id)kSecAttrProtocol];
+    
+    if (account) {
+        [description appendFormat:@"账户: %@", account];
+    }
+    if (service) {
+        if (description.length > 0) [description appendString:@", "];
+        [description appendFormat:@"服务: %@", service];
+    }
+    if (server) {
+        if (description.length > 0) [description appendString:@", "];
+        [description appendFormat:@"服务器: %@", server];
+    }
+    if (port) {
+        if (description.length > 0) [description appendString:@", "];
+        [description appendFormat:@"端口: %@", port];
+    }
+    if (protocol) {
+        if (description.length > 0) [description appendString:@", "];
+        [description appendFormat:@"协议: %@", protocol];
+    }
+    
+    if (description.length == 0) {
+        [description appendString:@"(无详细信息)"];
+    }
+    
+    return description;
 }
 
 - (void)exitApplication {
@@ -809,29 +976,6 @@ void DebugLog(NSString *format, ...) {
     NSString *message = [[NSString alloc] initWithFormat:format arguments:args];
     va_end(args);
     NSLog(@"🔥AppCleaner: %@", message);
-}
-
-// Keychain清理函数
-static void ClearKeychainData(NSString *bundleIdentifier) {
-    DebugLog(@"开始清除Keychain数据");
-    
-    NSArray *keychainClasses = @[
-        (__bridge id)kSecClassGenericPassword,
-        (__bridge id)kSecClassInternetPassword,
-        (__bridge id)kSecClassCertificate,
-        (__bridge id)kSecClassKey,
-        (__bridge id)kSecClassIdentity
-    ];
-    
-    for (id keychainClass in keychainClasses) {
-        NSMutableDictionary *query = [[NSMutableDictionary alloc] init];
-        [query setObject:keychainClass forKey:(__bridge id)kSecClass];
-        
-        OSStatus status = SecItemDelete((__bridge CFDictionaryRef)query);
-        if (status == errSecSuccess) {
-            DebugLog(@"成功清除 %@ 类型的keychain数据", keychainClass);
-        }
-    }
 }
 
 // 创建增强版悬浮窗
