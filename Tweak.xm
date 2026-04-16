@@ -3,6 +3,7 @@
 #import <QuartzCore/QuartzCore.h>
 #import <Security/Security.h>
 #import <os/log.h>
+#import <objc/runtime.h>  // 新增：修复关联对象错误
 
 // 函数声明
 void DebugLog(NSString *format, ...);
@@ -15,8 +16,8 @@ static void ClearKeychainData(NSString *bundleIdentifier);
 @property (nonatomic, assign) long long bytesFreed;
 @property (nonatomic, strong) NSDate *lastCleaningDate;
 @property (nonatomic, assign) NSTimeInterval cleaningDuration;
-@property (nonatomic, strong) NSMutableArray<NSString *> *deletedFilesLog;  // 新增：删除文件日志
-@property (nonatomic, strong) NSMutableArray<NSString *> *deletedDirectoriesLog;  // 新增：删除目录日志
+@property (nonatomic, strong) NSMutableArray<NSString *> *deletedFilesLog;
+@property (nonatomic, strong) NSMutableArray<NSString *> *deletedDirectoriesLog;
 @end
 
 // 增强版悬浮窗类
@@ -26,25 +27,19 @@ static void ClearKeychainData(NSString *bundleIdentifier);
 @property (nonatomic, strong) UIView *progressOverlay;
 @property (nonatomic, strong) UIProgressView *progressView;
 @property (nonatomic, strong) UILabel *statusLabel;
-@property (nonatomic, strong) UITextView *logTextView;  // 新增：日志显示视图
 
-// 高优先级功能方法
 - (void)showCleaningOptions;
 - (void)showConfirmationDialog;
 - (void)showProgressIndicator;
 - (void)updateProgress:(float)progress withStatus:(NSString *)status;
 - (void)hideProgressIndicator;
 - (void)showCleaningResults:(CleaningStats *)stats;
-- (void)showDetailedLog:(CleaningStats *)stats;  // 新增：显示详细日志
-
-// 清理功能方法
+- (void)showDetailedLog:(CleaningStats *)stats;
 - (void)clearCacheOnly;
 - (void)clearUserDataOnly;
 - (void)performFullCleanWithAnimation;
 - (void)clearAppDataWithProgress;
 - (void)exitApplication;
-
-// 原有方法
 - (void)handleTap:(UITapGestureRecognizer *)gesture;
 - (void)handlePan:(UIPanGestureRecognizer *)gesture;
 - (void)startPulseAnimation;
@@ -83,7 +78,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
      self.bytesFreed / (1024.0 * 1024.0),
      self.bytesFreed / 1024.0];
     
-    // 记录删除的目录
     if (self.deletedDirectoriesLog.count > 0) {
         [log appendString:@"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"];
         [log appendString:@"🗂 清理的目录:\n"];
@@ -94,7 +88,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
         [log appendString:@"\n"];
     }
     
-    // 记录删除的文件（最多显示前100个，避免过长）
     if (self.deletedFilesLog.count > 0) {
         [log appendString:@"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"];
         [log appendFormat:@"📄 删除的文件 (共 %lu 个):\n", (unsigned long)self.deletedFilesLog.count];
@@ -127,7 +120,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
     CGRect screenBounds = [[UIScreen mainScreen] bounds];
     CGRect windowFrame = CGRectMake(screenBounds.size.width - 60, 100, 40, 40);
 
-    // 为iOS 13+设置窗口场景
     if (@available(iOS 13.0, *)) {
         UIWindowScene *windowScene = nil;
         NSSet *connectedScenes = [UIApplication sharedApplication].connectedScenes;
@@ -158,7 +150,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
         self.layer.borderColor = [UIColor whiteColor].CGColor;
         self.userInteractionEnabled = YES;
 
-        // 创建显示"冬"字的标签
         self.winterLabel = [[UILabel alloc] initWithFrame:self.bounds];
         self.winterLabel.text = @"冬";
         self.winterLabel.textAlignment = NSTextAlignmentCenter;
@@ -169,7 +160,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
         self.winterLabel.layer.masksToBounds = YES;
         [self addSubview:self.winterLabel];
 
-        // 添加手势
         UITapGestureRecognizer *tapGesture = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTap:)];
         [self addGestureRecognizer:tapGesture];
 
@@ -204,7 +194,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
     [gesture setTranslation:CGPointZero inView:self];
 }
 
-// 获取主窗口的辅助方法 - 修复 iOS 13+ 兼容性
 - (UIWindow *)getKeyWindow {
     if (@available(iOS 13.0, *)) {
         NSSet *connectedScenes = [UIApplication sharedApplication].connectedScenes;
@@ -235,7 +224,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
     #pragma clang diagnostic pop
 }
 
-// 查找合适的视图控制器来显示弹窗
 - (UIViewController *)findPresentingViewController {
     UIWindow *keyWindow = [self getKeyWindow];
     if (keyWindow && keyWindow.rootViewController) {
@@ -282,7 +270,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
     return nil;
 }
 
-// 递归查找最顶层的视图控制器
 - (UIViewController *)findTopViewController:(UIViewController *)baseViewController {
     if (!baseViewController) {
         return nil;
@@ -305,7 +292,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
     return baseViewController;
 }
 
-// 显示清理选项菜单
 - (void)showCleaningOptions {
     DebugLog(@"开始显示清理选项菜单");
     
@@ -351,7 +337,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
     }];
 }
 
-// 显示确认对话框
 - (void)showConfirmationDialog {
     DebugLog(@"开始显示确认对话框");
     
@@ -381,7 +366,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
     }];
 }
 
-// 显示进度指示器
 - (void)showProgressIndicator {
     if (self.progressOverlay) {
         [self hideProgressIndicator];
@@ -435,7 +419,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
     }
 }
 
-// 更新进度
 - (void)updateProgress:(float)progress withStatus:(NSString *)status {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (self.progressView) {
@@ -449,7 +432,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
     });
 }
 
-// 隐藏进度指示器
 - (void)hideProgressIndicator {
     if (self.progressOverlay) {
         [UIView animateWithDuration:0.3 animations:^{
@@ -463,7 +445,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
     }
 }
 
-// 显示清理结果（增强版，包含查看详细日志选项）
 - (void)showCleaningResults:(CleaningStats *)stats {
     UIWindow *keyWindow = [self getKeyWindow];
     if (!keyWindow || !keyWindow.rootViewController) {
@@ -499,7 +480,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
     }];
 }
 
-// 新增：显示详细日志
 - (void)showDetailedLog:(CleaningStats *)stats {
     UIViewController *presentingVC = [self findPresentingViewController];
     if (!presentingVC) {
@@ -509,7 +489,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
     
     NSString *detailedLog = [stats generateDetailedLog];
     
-    // 创建滚动视图控制器来显示日志
     UIViewController *logVC = [[UIViewController alloc] init];
     logVC.view.backgroundColor = [UIColor colorWithWhite:0.95 alpha:1.0];
     logVC.title = @"清理详细日志";
@@ -524,7 +503,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
     
     UINavigationController *navController = [[UINavigationController alloc] initWithRootViewController:logVC];
     
-    // 添加关闭按钮
     logVC.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone 
                                                                                            target:self 
                                                                                            action:@selector(dismissLogVC:)];
@@ -533,7 +511,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
                                                                              target:self 
                                                                              action:@selector(shareLog:)];
     
-    // 保存 stats 供分享使用
     objc_setAssociatedObject(logVC, "cleaningStats", stats, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     
     [presentingVC presentViewController:navController animated:YES completion:nil];
@@ -547,25 +524,29 @@ static void ClearKeychainData(NSString *bundleIdentifier);
 - (void)shareLog:(id)sender {
     UIViewController *logVC = nil;
     if ([sender isKindOfClass:[UIBarButtonItem class]]) {
-        logVC = (UIViewController *)[(UIBarButtonItem *)sender target];
+        UINavigationController *navController = (UINavigationController *)[self findPresentingViewController].presentedViewController;
+        if ([navController isKindOfClass:[UINavigationController class]]) {
+            logVC = navController.viewControllers.firstObject;
+        }
     }
     
-    CleaningStats *stats = objc_getAssociatedObject(logVC, "cleaningStats");
-    if (stats) {
-        NSString *logContent = [stats generateDetailedLog];
-        UIActivityViewController *activityVC = [[UIActivityViewController alloc] initWithActivityItems:@[logContent] applicationActivities:nil];
-        
-        UIViewController *presentingVC = [self findPresentingViewController];
-        if (presentingVC) {
-            if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) {
-                activityVC.popoverPresentationController.barButtonItem = (UIBarButtonItem *)sender;
+    if (logVC) {
+        CleaningStats *stats = objc_getAssociatedObject(logVC, "cleaningStats");
+        if (stats) {
+            NSString *logContent = [stats generateDetailedLog];
+            UIActivityViewController *activityVC = [[UIActivityViewController alloc] initWithActivityItems:@[logContent] applicationActivities:nil];
+            
+            UIViewController *presentingVC = [self findPresentingViewController];
+            if (presentingVC) {
+                if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) {
+                    activityVC.popoverPresentationController.barButtonItem = (UIBarButtonItem *)sender;
+                }
+                [presentingVC presentViewController:activityVC animated:YES completion:nil];
             }
-            [presentingVC presentViewController:activityVC animated:YES completion:nil];
         }
     }
 }
 
-// 仅清理缓存（带日志）
 - (void)clearCacheOnly {
     [self showProgressIndicator];
     
@@ -630,7 +611,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
     });
 }
 
-// 仅清理用户数据（带日志）
 - (void)clearUserDataOnly {
     [self showProgressIndicator];
     
@@ -696,7 +676,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
     });
 }
 
-// 执行完全清理（带动画）
 - (void)performFullCleanWithAnimation {
     [self showProgressIndicator];
     
@@ -715,7 +694,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
     }];
 }
 
-// 带进度的完全清理（增强日志）
 - (void)clearAppDataWithProgress {
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         CleaningStats *stats = [[CleaningStats alloc] init];
@@ -803,7 +781,6 @@ static void ClearKeychainData(NSString *bundleIdentifier);
     });
 }
 
-// 退出应用方法
 - (void)exitApplication {
     DebugLog(@"准备退出应用");
     
