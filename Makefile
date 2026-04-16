@@ -1,5 +1,5 @@
 
-PACKAGE_NAME = allclean
+PACKAGE_NAME = AppCleaner
 TARGET = iphone:clang:latest:11.0
 INSTALL_TARGET_PROCESSES = SpringBoard
 
