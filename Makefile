@@ -18,7 +18,7 @@ TWEAK_NAME = AppCleaner
 # 源文件
 AppCleaner_FILES = Tweak.xm AppCleanerPlugin.m
 AppCleaner_FRAMEWORKS = UIKit WebKit Foundation Security
-AppCleaner_CFLAGS = -fobjc-arc -O2
+AppCleaner_CFLAGS = -fobjc-arc -O2 -Wno-deprecated-declarations
 AppCleaner_PRIVATE_FRAMEWORKS = 
 AppCleaner_LIBRARIES = 
 
