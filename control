@@ -1,10 +1,10 @@
-Package: com.yourcompany.appcleaner
+Package: com.cleaner.appcleaner
 Name: AppCleaner
 Version: 1.0.0
 Architecture: iphoneos-arm
-Description: 注入到App内部，一键清除当前App的沙盒、Keychain、Cookie等数据
-Maintainer: Your Name <your@email.com>
-Author: Your Name
+Description: 一键清除当前App的沙盒、Keychain、Cookie等数据
+Maintainer: Cleaner Team
+Author: Cleaner Team
 Section: Tweaks
-Depends: firmware (>= 11.0), mobilesubstrate
+Depends: mobilesubstrate, preferenceloader
 Priority: optional
