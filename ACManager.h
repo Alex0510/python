@@ -1,8 +1,6 @@
 //
-//  SandboxCleanerPlugin.h
-//  SandboxCleanerPlugin
-//
-//  Created on 2026-04-16.
+//  AppCleanerPlugin.h
+//  AppCleaner
 //
 
 #import <Foundation/Foundation.h>
@@ -10,7 +8,7 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-@interface SandboxCleanerPlugin : NSObject
+@interface AppCleanerPlugin : NSObject
 
 + (instancetype)sharedPlugin;
 
@@ -19,6 +17,24 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// 隐藏悬浮清理按钮
 - (void)hideFloatingButton;
+
+/// 清理当前App的所有数据
+- (void)cleanAllData;
+
+/// 清理沙盒 (Documents/Caches/tmp)
+- (void)cleanSandbox;
+
+/// 清理 NSUserDefaults
+- (void)cleanUserDefaults;
+
+/// 清理 Cookie 和 WebKit
+- (void)cleanCookiesAndWebKit;
+
+/// 清理 Keychain
+- (void)cleanKeychain;
+
+/// 退出App
+- (void)exitApp;
 
 @end
 
