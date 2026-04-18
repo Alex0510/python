@@ -1,9 +1,9 @@
-Package: com.yourname.appcleaner
-Name: AppCleaner
-Version: 1.0.0
+Package: com.yourname.trollfoolsadremover
+Name: TrollFools Ad Remover
+Version: 1.0
 Architecture: iphoneos-arm
-Description: 应用数据清理工具 - 带悬浮窗的智能清理插件
+Description: Removes advertisements from TrollFools.
 Maintainer: Your Name <your@email.com>
-Author: Your Name <your@email.com>
+Author: Your Name
 Section: Tweaks
-Depends: mobilesubstrate (>= 0.9.5000), firmware (>= 11.0)
+Depends: firmware (>= 14.0)
