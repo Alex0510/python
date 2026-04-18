@@ -1,0 +1,114 @@
+name: Build TrollFoolsAdRemover
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest   # 必须使用 macOS
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          brew install ldid dpkg
+
+      - name: Create source files
+        run: |
+          cat > Tweak.m << 'EOF'
+          #import <Foundation/Foundation.h>
+          #import <UIKit/UIKit.h>
+          #import <objc/runtime.h>
+
+          static BOOL (*orig_boolForKey)(id self, SEL _cmd, NSString *defaultName);
+
+          static BOOL new_boolForKey(id self, SEL _cmd, NSString *defaultName) {
+              if ([defaultName isEqualToString:@"isAdvertisementHiddenV2"]) {
+                  return YES;
+              }
+              return orig_boolForKey(self, _cmd, defaultName);
+          }
+
+          __attribute__((constructor))
+          static void init() {
+              Class cls = NSClassFromString(@"NSUserDefaults");
+              SEL sel = @selector(boolForKey:);
+              Method method = class_getInstanceMethod(cls, sel);
+              if (method) {
+                  orig_boolForKey = (typeof(orig_boolForKey))method_getImplementation(method);
+                  method_setImplementation(method, (IMP)new_boolForKey);
+                  NSLog(@"[TrollFoolsAdRemover] Loaded – advertisements disabled.");
+              } else {
+                  NSLog(@"[TrollFoolsAdRemover] Failed to hook boolForKey:");
+              }
+          }
+          EOF
+
+          cat > control << 'EOF'
+          Package: com.yourname.trollfoolsadremover
+          Name: TrollFools Ad Remover
+          Version: 1.0
+          Architecture: iphoneos-arm
+          Description: Removes advertisements from TrollFools.
+          Maintainer: Your Name <your@email.com>
+          Author: Your Name
+          Section: Tweaks
+          Depends: firmware (>= 14.0)
+
+          EOF
+
+          cat > TrollFoolsAdRemover.plist << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>Filter</key>
+              <dict>
+                  <key>Bundles</key>
+                  <array>
+                      <string>com.82flex.TrollFools</string>
+                  </array>
+              </dict>
+          </dict>
+          </plist>
+          EOF
+
+      - name: Compile dylib
+        run: |
+          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+          clang -arch arm64 -dynamiclib -o TrollFoolsAdRemover.dylib Tweak.m \
+            -framework Foundation -framework UIKit \
+            -isysroot $SDK_PATH \
+            -fobjc-arc \
+            -miphoneos-version-min=14.0
+
+      - name: Package deb
+        run: |
+          mkdir -p package/DEBIAN
+          cp control package/DEBIAN/
+          
+          mkdir -p package/Library/MobileSubstrate/DynamicLibraries
+          cp TrollFoolsAdRemover.dylib package/Library/MobileSubstrate/DynamicLibraries/
+          cp TrollFoolsAdRemover.plist package/Library/MobileSubstrate/DynamicLibraries/
+          
+          find package -type d -exec chmod 755 {} \;
+          find package -type f -exec chmod 644 {} \;
+          chmod 755 package/DEBIAN
+          chmod 755 package/Library/MobileSubstrate/DynamicLibraries/*.dylib
+          
+          dpkg-deb -b package TrollFoolsAdRemover.deb
+          
+          mkdir -p output
+          mv TrollFoolsAdRemover.deb output/
+
+      - name: Upload deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TrollFoolsAdRemover.deb
+          path: output/*.deb
