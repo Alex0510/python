@@ -1,73 +1,24 @@
-#import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
-#import <objc/runtime.h>
+#import <dlfcn.h>
 
-#pragma mark - 去广告功能
+static dispatch_once_t brokenOnceToken = 0;
 
-static BOOL (*orig_boolForKey)(id self, SEL _cmd, NSString *defaultName);
-
-static BOOL new_boolForKey(id self, SEL _cmd, NSString *defaultName) {
-    if ([defaultName isEqualToString:@"isAdvertisementHiddenV2"]) {
-        return YES;
-    }
-    return orig_boolForKey(self, _cmd, defaultName);
-}
-
+// 模拟内存破坏：将 once token 写成一个非法值
 __attribute__((constructor))
-static void initAdRemover() {
-    Class cls = NSClassFromString(@"NSUserDefaults");
-    SEL sel = @selector(boolForKey:);
-    Method method = class_getInstanceMethod(cls, sel);
-    if (method) {
-        orig_boolForKey = (typeof(orig_boolForKey))method_getImplementation(method);
-        method_setImplementation(method, (IMP)new_boolForKey);
-        NSLog(@"[TrollFoolsAdRemover] 去广告已启用");
-    } else {
-        NSLog(@"[TrollFoolsAdRemover] Hook boolForKey: 失败");
-    }
-}
+void triggerDispatchOnceCorruption() {
+    // 先正常执行一次 dispatch_once，让 token 变为已执行状态
+    dispatch_once(&brokenOnceToken, ^{
+        NSLog(@"[CrashDylib] First dispatch_once executed.");
+    });
 
-#pragma mark - 隐藏分段控件与字母索引（直接隐藏，无需按钮）
+    // 关键破坏步骤：强行把 token 的最后一位改成 0（模拟内存损坏）
+    // 在 libdispatch 内部，token 为 0 表示未初始化，但这里 token 原本是 ~0ul 的某个值，
+    // 直接清零后 dispatch_once 会认为从未执行过，但在内部检查时会因为 ulock 状态不一致而崩溃。
+    // 更暴力的方式：直接 memset 为 0。
+    memset(&brokenOnceToken, 0, sizeof(brokenOnceToken));
 
-static void hideScopeBarAndIndexInView(UIView *view) {
-    for (UIView *subview in view.subviews) {
-        NSString *className = NSStringFromClass([subview class]);
-        // 隐藏右侧字母索引
-        if ([className containsString:@"IndexableScroller"]) {
-            subview.hidden = YES;
-        }
-        // 隐藏搜索栏的分段控件 (Scope Bar)
-        if ([subview isKindOfClass:NSClassFromString(@"_UISearchBarContainerView")]) {
-            UISearchBar *searchBar = [subview valueForKey:@"searchBar"];
-            if (searchBar) {
-                searchBar.showsScopeBar = NO;
-                searchBar.scopeButtonTitles = nil;
-            }
-        }
-        hideScopeBarAndIndexInView(subview);
-    }
-}
-
-static void applySimplifications(UIViewController *vc) {
-    hideScopeBarAndIndexInView(vc.view);
-}
-
-#pragma mark - Hook 视图控制器
-
-%hook UIViewController
-
-- (void)viewDidAppear:(BOOL)animated {
-    %orig;
-    // 只处理包含 AppListView 的控制器
-    if ([NSStringFromClass([self class]) containsString:@"AppListView"] ||
-        [NSStringFromClass([[self valueForKey:@"rootView"] class]) containsString:@"AppListView"]) {
-        applySimplifications(self);
-        NSLog(@"[TrollFoolsAdRemover] 已隐藏分段控件和字母索引");
-    }
-}
-
-%end
-
-%ctor {
-    NSLog(@"[TrollFoolsAdRemover] 插件加载完成，将自动隐藏 UI 元素");
+    // 再次调用 dispatch_once，libdispatch 会尝试重新初始化锁结构，从而触发 ulock 错误
+    dispatch_once(&brokenOnceToken, ^{
+        NSLog(@"[CrashDylib] This line will never be reached because we crash.");
+    });
 }
