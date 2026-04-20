@@ -1,24 +1,52 @@
 #import <UIKit/UIKit.h>
 #import <dlfcn.h>
+#include "fishhook.h"
 
-static dispatch_once_t brokenOnceToken = 0;
+// 保存原始函数指针
+static void (*orig_dispatch_once)(dispatch_once_t *predicate, dispatch_block_t block);
+static void (*orig_dispatch_once_f)(dispatch_once_t *predicate, void *context, dispatch_function_t function);
 
-// 模拟内存破坏：将 once token 写成一个非法值
+// 安全版本 dispatch_once
+void safe_dispatch_once(dispatch_once_t *predicate, dispatch_block_t block) {
+    if (!predicate || !block) return;
+    
+    // 检查 token 是否处于非法状态（既不是0也不是~0ul）
+    dispatch_once_t value = *predicate;
+    const dispatch_once_t done_value = ~0ul;
+    
+    if (value != 0 && value != done_value) {
+        // token 损坏，修复为未执行状态
+        NSLog(@"[SafeDispatchOnce] Fix corrupted dispatch_once_t %p, value=%lx -> set to 0", predicate, (unsigned long)value);
+        *predicate = 0;
+    }
+    
+    // 调用原始 dispatch_once
+    orig_dispatch_once(predicate, block);
+}
+
+// 安全版本 dispatch_once_f
+void safe_dispatch_once_f(dispatch_once_t *predicate, void *context, dispatch_function_t function) {
+    if (!predicate || !function) return;
+    
+    dispatch_once_t value = *predicate;
+    const dispatch_once_t done_value = ~0ul;
+    
+    if (value != 0 && value != done_value) {
+        NSLog(@"[SafeDispatchOnce] Fix corrupted dispatch_once_f token %p, value=%lx -> set to 0", predicate, (unsigned long)value);
+        *predicate = 0;
+    }
+    
+    orig_dispatch_once_f(predicate, context, function);
+}
+
+// 初始化 hook
 __attribute__((constructor))
-void triggerDispatchOnceCorruption() {
-    // 先正常执行一次 dispatch_once，让 token 变为已执行状态
-    dispatch_once(&brokenOnceToken, ^{
-        NSLog(@"[CrashDylib] First dispatch_once executed.");
-    });
-
-    // 关键破坏步骤：强行把 token 的最后一位改成 0（模拟内存损坏）
-    // 在 libdispatch 内部，token 为 0 表示未初始化，但这里 token 原本是 ~0ul 的某个值，
-    // 直接清零后 dispatch_once 会认为从未执行过，但在内部检查时会因为 ulock 状态不一致而崩溃。
-    // 更暴力的方式：直接 memset 为 0。
-    memset(&brokenOnceToken, 0, sizeof(brokenOnceToken));
-
-    // 再次调用 dispatch_once，libdispatch 会尝试重新初始化锁结构，从而触发 ulock 错误
-    dispatch_once(&brokenOnceToken, ^{
-        NSLog(@"[CrashDylib] This line will never be reached because we crash.");
-    });
+void initSafeDispatchOnce() {
+    // 重绑定 dispatch_once 和 dispatch_once_f
+    struct rebinding bindings[] = {
+        {"dispatch_once", (void *)safe_dispatch_once, (void **)&orig_dispatch_once},
+        {"dispatch_once_f", (void *)safe_dispatch_once_f, (void **)&orig_dispatch_once_f}
+    };
+    rebind_symbols(bindings, 2);
+    NSLog(@"[SafeDispatchOnce] Installed hooks for dispatch_once family");
 }
