@@ -7,7 +7,6 @@
 static BOOL (*orig_boolForKey)(id self, SEL _cmd, NSString *defaultName);
 
 static BOOL new_boolForKey(id self, SEL _cmd, NSString *defaultName) {
-    // 强制隐藏广告开关
     if ([defaultName isEqualToString:@"isAdvertisementHiddenV2"]) {
         return YES;
     }
@@ -30,7 +29,7 @@ static void initAdRemover() {
 
 #pragma mark - 简化模式功能
 
-static BOOL isSimplifiedMode = NO;          // 当前是否处于简化模式
+static BOOL isSimplifiedMode = NO;
 static NSString * const kSimplifiedModeChangedNotification = @"SimplifiedModeChanged";
 
 static void toggleSimplifiedMode() {
@@ -38,7 +37,6 @@ static void toggleSimplifiedMode() {
     [[NSNotificationCenter defaultCenter] postNotificationName:kSimplifiedModeChangedNotification object:nil];
 }
 
-// 递归隐藏 IndexableScroller（右侧字母索引）
 static void hideIndexableScrollerInView(UIView *view) {
     for (UIView *subview in view.subviews) {
         NSString *className = NSStringFromClass([subview class]);
@@ -49,11 +47,10 @@ static void hideIndexableScrollerInView(UIView *view) {
     }
 }
 
-// 隐藏分段控件（Scope Bar）和右侧索引
 static void applySimplifiedMode(UIViewController *vc) {
     if (!isSimplifiedMode) return;
     
-    // 1. 隐藏搜索栏的 scope bar（所有应用/用户应用/巨魔应用/系统应用）
+    // 隐藏搜索栏的分段控件 (Scope Bar)
     for (UIView *subview in vc.view.subviews) {
         if ([subview isKindOfClass:NSClassFromString(@"_UISearchBarContainerView")]) {
             UISearchBar *searchBar = [subview valueForKey:@"searchBar"];
@@ -64,27 +61,22 @@ static void applySimplifiedMode(UIViewController *vc) {
             }
         }
     }
-    
-    // 2. 隐藏右侧字母索引视图
+    // 隐藏右侧字母索引
     hideIndexableScrollerInView(vc.view);
 }
 
-// 恢复简化模式隐藏的内容（显示 scope bar 和索引）
 static void resetSimplifiedMode(UIViewController *vc) {
-    // 显示 scope bar（恢复原始状态）
     for (UIView *subview in vc.view.subviews) {
         if ([subview isKindOfClass:NSClassFromString(@"_UISearchBarContainerView")]) {
             UISearchBar *searchBar = [subview valueForKey:@"searchBar"];
             if (searchBar) {
                 searchBar.showsScopeBar = YES;
-                // 需要重新设置 scopeButtonTitles，原始值需要从 AppListModel.Scope 获取
-                // 为简单起见，我们只恢复显示，标题会在下次刷新时自动恢复
+                // 注意：scopeButtonTitles 需要重新设置，原始值需要从 AppListModel.Scope 获取
+                // 简单起见，不恢复标题，下次视图刷新时会自动恢复
                 break;
             }
         }
     }
-    
-    // 显示右侧索引（遍历恢复隐藏）
     void (^showIndexableScroller)(UIView *) = ^(UIView *view) {
         for (UIView *subview in view.subviews) {
             NSString *className = NSStringFromClass([subview class]);
@@ -97,7 +89,6 @@ static void resetSimplifiedMode(UIViewController *vc) {
     showIndexableScroller(vc.view);
 }
 
-// 根据当前模式更新视图
 static void updateUIForMode(UIViewController *vc) {
     if (isSimplifiedMode) {
         applySimplifiedMode(vc);
@@ -106,13 +97,12 @@ static void updateUIForMode(UIViewController *vc) {
     }
 }
 
-#pragma mark - Hook 代码
+#pragma mark - Hook
 
 %hook UIViewController
 
 - (void)viewDidLoad {
     %orig;
-    // 监听简化模式切换通知
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(tf_simplifiedModeChanged)
                                                  name:kSimplifiedModeChangedNotification
@@ -120,7 +110,6 @@ static void updateUIForMode(UIViewController *vc) {
 }
 
 - (void)tf_simplifiedModeChanged {
-    // 只处理承载 AppListView 的 UIHostingController
     if ([self isKindOfClass:NSClassFromString(@"UIHostingController")]) {
         UIViewController *hosting = self;
         NSString *rootClassName = NSStringFromClass([[hosting valueForKey:@"rootView"] class]);
@@ -128,7 +117,7 @@ static void updateUIForMode(UIViewController *vc) {
             updateUIForMode(hosting);
             // 更新左上角按钮标题
             UIBarButtonItem *btn = hosting.navigationItem.leftBarButtonItem;
-            if (btn) {
+            if (btn && (btn.action == @selector(tf_toggleSimplifiedMode))) {
                 btn.title = isSimplifiedMode ? @"恢复" : @"简化";
             }
         }
@@ -145,32 +134,42 @@ static void updateUIForMode(UIViewController *vc) {
 
 - (void)viewDidAppear:(BOOL)animated {
     %orig;
+    static NSMutableSet *processed = [NSMutableSet set];
+    if ([processed containsObject:self]) return;
     
     NSString *rootClassName = NSStringFromClass([self.rootView class]);
     if ([rootClassName containsString:@"AppListView"]) {
-        // 应用当前模式（如果未应用过）
-        static NSMutableSet *processedControllers = [NSMutableSet set];
-        if (![processedControllers containsObject:self]) {
-            [processedControllers addObject:self];
-            updateUIForMode(self);
-            
-            // 添加左上角切换按钮
-            UIBarButtonItem *toggleButton = [[UIBarButtonItem alloc] initWithTitle:isSimplifiedMode ? @"恢复" : @"简化"
-                                                                             style:UIBarButtonItemStylePlain
-                                                                            target:self
-                                                                            action:@selector(tf_toggleSimplifiedMode)];
-            self.navigationItem.leftBarButtonItem = toggleButton;
-        }
+        [processed addObject:self];
+        // 延迟添加按钮，确保导航栏完全加载
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self addSimplifyButton];
+        });
+        NSLog(@"[TrollFoolsAdRemover] AppListView detected, will add button.");
     }
+}
+
+%new
+- (void)addSimplifyButton {
+    // 避免重复添加
+    UIBarButtonItem *existing = self.navigationItem.leftBarButtonItem;
+    if (existing && (existing.action == @selector(tf_toggleSimplifiedMode))) {
+        return;
+    }
+    UIBarButtonItem *btn = [[UIBarButtonItem alloc] initWithTitle:isSimplifiedMode ? @"恢复" : @"简化"
+                                                             style:UIBarButtonItemStylePlain
+                                                            target:self
+                                                            action:@selector(tf_toggleSimplifiedMode)];
+    self.navigationItem.leftBarButtonItem = btn;
+    [self.navigationController.navigationBar setNeedsLayout];
+    NSLog(@"[TrollFoolsAdRemover] Simplify button added to left bar.");
 }
 
 %new
 - (void)tf_toggleSimplifiedMode {
     toggleSimplifiedMode();
-    // 更新当前控制器的 UI
     updateUIForMode(self);
-    // 更新按钮标题
     self.navigationItem.leftBarButtonItem.title = isSimplifiedMode ? @"恢复" : @"简化";
+    NSLog(@"[TrollFoolsAdRemover] Simplified mode toggled: %@", isSimplifiedMode ? @"ON" : @"OFF");
 }
 
 %end
