@@ -6,7 +6,7 @@
     <dict>
         <key>Bundles</key>
         <array>
-            <string>com.82flex.TrollFools</string>
+            <string>com.iosbx.theosgui</string>
         </array>
     </dict>
 </dict>
