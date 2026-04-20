@@ -1,9 +1,12 @@
-export THEOS ?= $(HOME)/theos
-export THEOS_MAKE_PATH = $(THEOS)/makefiles
+ARCHS = arm64 arm64e
+TARGET = iphone:latest:13.0
+INSTALL_TARGET_PROCESSES = TheosGUI
 
-TWEAK_NAME = TrollFoolsAdRemover
-# 使用 .x 扩展名（不经过 Logos 预处理）
-TrollFoolsAdRemover_FILES = Tweak.xm fishhook.c
-TrollFoolsAdRemover_CFLAGS = -fobjc-arc
+include $(THEOS)/makefiles/common.mk
 
-include $(THEOS)/makefiles/tweak.mk
+TWEAK_NAME = SafeDispatchOnce
+SafeDispatchOnce_FILES = Tweak.xm
+SafeDispatchOnce_CFLAGS = -fobjc-arc
+SafeDispatchOnce_LDFLAGS = -lsubstrate
+
+include $(THEOS_MAKE_PATH)/tweak.mk
