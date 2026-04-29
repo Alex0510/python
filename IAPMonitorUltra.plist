@@ -4,12 +4,12 @@
 <plist version="1.0">
 <dict>
 
-    <!-- 注入所有 App -->
     <key>Filter</key>
     <dict>
         <key>Bundles</key>
         <array>
             <string>*</string>
+            <string>com.apple.springboard</string>
         </array>
     </dict>
 
