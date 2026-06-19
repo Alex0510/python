@@ -1,9 +1,8 @@
-Package: com.yourname.trollfoolsadremover
-Name: TrollFools Ad Remover
-Version: 1.0
+Package: com.yourcompany.mobpushkiller
+Name: MobPushKiller
+Version: 1.0.0
 Architecture: iphoneos-arm
-Description: Removes advertisements from TrollFools.
-Maintainer: Your Name <your@email.com>
-Author: Your Name
+Description: 消息防撤回 + 闪照永久保留（MobPush SDK）
+Maintainer: YourName <email@example.com>
+Author: YourName <email@example.com>
 Section: Tweaks
-Depends: firmware (>= 14.0)
