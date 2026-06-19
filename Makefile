@@ -1,12 +1,10 @@
-ARCHS = arm64 arm64e
-TARGET = iphone:latest:13.0
-INSTALL_TARGET_PROCESSES = TheosGUI
+export ARCHS = armv7 arm64 arm64e
+TARGET = iphone:clang:latest:14.0
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = SafeDispatchOnce
-SafeDispatchOnce_FILES = Tweak.xm
-SafeDispatchOnce_CFLAGS = -fobjc-arc
-SafeDispatchOnce_LDFLAGS = -lsubstrate
+TWEAK_NAME = MobPushKiller
+MobPushKiller_FILES = Tweak.xm
+MobPushKiller_CFLAGS = -fobjc-arc
 
 include $(THEOS_MAKE_PATH)/tweak.mk
